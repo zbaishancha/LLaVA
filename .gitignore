@@ -36,3 +36,5 @@ serve_images/
 
 playground/
 *.jpg
+mlruns/
+*.csv

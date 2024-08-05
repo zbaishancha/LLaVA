@@ -32,12 +32,22 @@ def eval_model(args):
     model_path = os.path.expanduser(args.model_path)
     model_name = get_model_name_from_path(model_path)
     tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, args.model_base, model_name)
-
-    questions = [json.loads(q) for q in open(os.path.expanduser(args.question_file), "r")]
+    if "lingoqa" in args.question_file.lower():
+        with open(args.question_file, 'r', encoding='utf-8') as file:  
+            data = json.load(file)
+        questions = []
+        for example in data:
+            question_id = example['id']
+            image_path = example['image'][-1] # last image path
+            text = example['conversations'][0]['value'].replace("<image>\n", "")
+            questions.append(dict(question_id=question_id, image=image_path, text=text))
+    else:
+        questions = [json.loads(q) for q in open(os.path.expanduser(args.question_file), "r")]
     questions = get_chunk(questions, args.num_chunks, args.chunk_idx)
     answers_file = os.path.expanduser(args.answers_file)
     os.makedirs(os.path.dirname(answers_file), exist_ok=True)
     ans_file = open(answers_file, "w")
+    questions = questions[::2]
     for line in tqdm(questions):
         idx = line["question_id"]
         image_file = line["image"]
@@ -90,7 +100,7 @@ if __name__ == "__main__":
     parser.add_argument("--image-folder", type=str, default="")
     parser.add_argument("--question-file", type=str, default="tables/question.jsonl")
     parser.add_argument("--answers-file", type=str, default="answer.jsonl")
-    parser.add_argument("--conv-mode", type=str, default="llava_v1")
+    parser.add_argument("--conv-mode", type=str, default="v1")
     parser.add_argument("--num-chunks", type=int, default=1)
     parser.add_argument("--chunk-idx", type=int, default=0)
     parser.add_argument("--temperature", type=float, default=0.2)
