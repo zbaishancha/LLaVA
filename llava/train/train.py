@@ -34,7 +34,7 @@ from llava.train.llava_trainer import LLaVATrainer
 from llava import conversation as conversation_lib
 from llava.model import *
 from llava.mm_utils import tokenizer_image_token
-
+from llava import deekeeper
 from PIL import Image
 
 
@@ -74,10 +74,12 @@ class DataArguments:
     is_multimodal: bool = False
     image_folder: Optional[str] = field(default=None)
     image_aspect_ratio: str = 'square'
-
+    crop_ratio: int = 0.65
+    
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
+    exp_name: str = 'llava'
     cache_dir: Optional[str] = field(default=None)
     optim: str = field(default="adamw_torch")
     remove_unused_columns: bool = field(default=False)
@@ -668,6 +670,7 @@ class LazySupervisedDataset(Dataset):
         self.tokenizer = tokenizer
         self.list_data_dict = list_data_dict
         self.data_args = data_args
+        self.crop_ratio = data_args.crop_ratio
 
     def __len__(self):
         return len(self.list_data_dict)
@@ -689,6 +692,19 @@ class LazySupervisedDataset(Dataset):
             length_list.append(cur_len)
         return length_list
 
+    def center_crop(self, sample):
+        width, height = sample.size
+        crop_width = int(width * self.crop_ratio)
+        crop_height = int(height * self.crop_ratio)
+        left = (width - crop_width) // 2
+        top = (height - crop_height) // 2
+        right = (width + crop_width) // 2
+        bottom = (height + crop_height) // 2
+        crop_img = sample.crop((left, top, right, bottom))
+        # crop_img.show()
+        # crop_img.save('path_to_save_cropped_image.jpg')
+        return crop_img
+    
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         sources = self.list_data_dict[i]
         if isinstance(i, int):
@@ -698,7 +714,21 @@ class LazySupervisedDataset(Dataset):
             image_file = self.list_data_dict[i]['image']
             image_folder = self.data_args.image_folder
             processor = self.data_args.image_processor
-            image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
+            if isinstance(image_file, list):
+                image = []
+                for img_file in image_file:
+                    if image_folder is not None:
+                        image.append(Image.open(os.path.join(image_folder, img_file)).convert('RGB'))
+                    else:
+                        sample = Image.open(img_file).convert('RGB')
+                        crop_img = self.center_crop(sample)
+                        image.extend([sample,crop_img])
+            else:
+                if image_folder is not None:
+                    image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
+                else:
+                    image.append(Image.open(img_file).convert('RGB'))
+            
             if self.data_args.image_aspect_ratio == 'pad':
                 def expand2square(pil_img, background_color):
                     width, height = pil_img.size
@@ -712,10 +742,18 @@ class LazySupervisedDataset(Dataset):
                         result = Image.new(pil_img.mode, (height, height), background_color)
                         result.paste(pil_img, ((height - width) // 2, 0))
                         return result
-                image = expand2square(image, tuple(int(x*255) for x in processor.image_mean))
-                image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
+                if isinstance(image, list):
+                    image = [expand2square(img, tuple(int(x*255) for x in processor.image_mean)) for img in image]
+                    image = [processor.preprocess(img, return_tensors='pt')['pixel_values'][0] for img in image]
+                else:
+                    image = expand2square(image, tuple(int(x*255) for x in processor.image_mean))
+                    image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
             else:
-                image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
+                if isinstance(image, list):
+                    image = [processor.preprocess(img, return_tensors='pt')['pixel_values'][0] for img in image]
+                else:
+                    image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
+            
             sources = preprocess_multimodal(
                 copy.deepcopy([e["conversations"] for e in sources]),
                 self.data_args)
@@ -728,7 +766,6 @@ class LazySupervisedDataset(Dataset):
         if isinstance(i, int):
             data_dict = dict(input_ids=data_dict["input_ids"][0],
                              labels=data_dict["labels"][0])
-
         # image exist in the data
         if 'image' in self.list_data_dict[i]:
             data_dict['image'] = image
@@ -742,9 +779,8 @@ class LazySupervisedDataset(Dataset):
 @dataclass
 class DataCollatorForSupervisedDataset(object):
     """Collate examples for supervised fine-tuning."""
-
     tokenizer: transformers.PreTrainedTokenizer
-
+    
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
         input_ids, labels = tuple([instance[key] for instance in instances]
                                   for key in ("input_ids", "labels"))
@@ -762,13 +798,17 @@ class DataCollatorForSupervisedDataset(object):
             labels=labels,
             attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
         )
-
         if 'image' in instances[0]:
+            
             images = [instance['image'] for instance in instances]
-            if all(x is not None and x.shape == images[0].shape for x in images):
-                batch['images'] = torch.stack(images)
-            else:
+            if isinstance(images[0], list):
+                images = torch.stack([torch.stack(img, dim=0) for img in images], dim = 0)
                 batch['images'] = images
+            else:
+                if all(x is not None and x.shape == images[0].shape for x in images):
+                    batch['images'] = torch.stack(images)
+                else:
+                    batch['images'] = images
 
         return batch
 
@@ -791,6 +831,10 @@ def train(attn_implementation=None):
     parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    
+    if int(os.environ["RANK"]) == 0:
+        deekeeper.init_deekeeper_task("llava", training_args.exp_name, True)
+    
     local_rank = training_args.local_rank
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
 
