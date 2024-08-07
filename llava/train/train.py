@@ -75,6 +75,7 @@ class DataArguments:
     image_folder: Optional[str] = field(default=None)
     image_aspect_ratio: str = 'square'
     crop_ratio: int = 0.65
+    crop: bool = True
     
 
 @dataclass
@@ -670,6 +671,7 @@ class LazySupervisedDataset(Dataset):
         self.tokenizer = tokenizer
         self.list_data_dict = list_data_dict
         self.data_args = data_args
+        self.crop = data_args.crop
         self.crop_ratio = data_args.crop_ratio
 
     def __len__(self):
@@ -721,8 +723,11 @@ class LazySupervisedDataset(Dataset):
                         image.append(Image.open(os.path.join(image_folder, img_file)).convert('RGB'))
                     else:
                         sample = Image.open(img_file).convert('RGB')
-                        crop_img = self.center_crop(sample)
-                        image.extend([sample,crop_img])
+                        if self.crop:
+                            crop_img = self.center_crop(sample)
+                            image.extend([sample,crop_img])
+                        else:
+                            image.append(sample)
             else:
                 if image_folder is not None:
                     image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
