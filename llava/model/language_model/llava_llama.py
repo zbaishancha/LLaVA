@@ -55,34 +55,51 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.loss_weights = False
+        self.mode = "softmax"
         # Initialize weights and apply final processing
         self.post_init()
 
     def get_model(self):
         return self.model
 
-    def js_divergence(self, p, q):
-        m = 0.5 * (p + q)
-        return 0.5 * (F.kl_div(m.log(), p, reduction='batchmean') + F.kl_div(m.log(), q, reduction='batchmean'))
+    def js_div(self, p_output, q_output, get_softmax=True):
+        """
+        Function that measures JS divergence between target and output logits:
+        """
+        KLDivLoss = nn.KLDivLoss(reduction='batchmean')
+        if get_softmax:
+            p_output = F.softmax(p_output)
+            q_output = F.softmax(q_output)
+        log_mean_output = ((p_output + q_output )/2).log()
+        return (KLDivLoss(log_mean_output, p_output) + KLDivLoss(log_mean_output, q_output))/2
 
-    def calculate_weights(self, shift_logits_no_img, shift_logits, labels):
+    def calculate_weights(self, shift_logits_no_img, shift_logits, labels, mode="softmax", temperature=100000):
         b, l, c = shift_logits.shape
 
         fake_data = torch.randn(b, l-shift_logits_no_img.size(1), c, device=labels.device)
         shift_logits_no_img = torch.cat([fake_data, shift_logits_no_img], dim=1)
-        shift_logits_no_img_probs = F.softmax(shift_logits_no_img, dim=-1)
-        shift_logits_probs = F.softmax(shift_logits, dim=-1)
 
         weights = torch.zeros(b, l, device=labels.device)
         for i in range(b):
             for j in range(l):
                 if int(labels[i, j]) != -100:
-                    weights[i, j] = self.js_divergence(shift_logits_no_img_probs[i, j], 
-                                                    shift_logits_probs[i, j])
+                    weights[i, j] = self.js_div(shift_logits_no_img[i, j], 
+                                                shift_logits[i, j])
                 else:
-                    weights[i, j] = float('-inf')
+                    if mode == "softmax":
+                        weights[i, j] = float('-inf')
+                    elif mode == "sum":
+                        weights[i, j] = 0.0
         
-        weights = F.softmax(weights, dim=-1)
+        if mode == "softmax":
+            weights = F.softmax(weights*temperature, dim=-1)
+        elif mode == "sum":
+            weights_sum = weights.sum(dim=-1, keepdim=True)
+            weights = weights / (weights_sum + 1e-8)
+        
+        weights = weights / b
+        weights = weights.reshape(-1)
+
         return weights
 
     @add_start_docstrings_to_model_forward(LLAMA_INPUTS_DOCSTRING)
@@ -163,9 +180,11 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
             # loss weights if true
             weights = None
             if shift_logits_no_img is not None:
-                weights = self.calculate_weights(shift_logits_no_img.clone(), shift_logits.clone(), shift_labels.clone())
-                weights = weights.view(-1)
-            
+                weights = self.calculate_weights(shift_logits_no_img.clone(), 
+                                                shift_logits.clone(), 
+                                                shift_labels.clone(),
+                                                mode=self.mode)
+
             # Flatten the tokens
             shift_logits = shift_logits.view(-1, self.config.vocab_size)
             shift_labels = shift_labels.view(-1)
@@ -174,10 +193,9 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
             shift_labels = shift_labels.to(shift_logits.device)
 
             if weights is not None:
-                loss_fct = CrossEntropyLoss(reduction='none')
+                loss_fct = CrossEntropyLoss(reduction ='none')
                 loss = loss_fct(shift_logits, shift_labels)
-                loss = loss * weights
-                loss = loss.sum()
+                loss = (loss * weights).sum()
             else:
                 loss_fct = CrossEntropyLoss()
                 loss = loss_fct(shift_logits, shift_labels)

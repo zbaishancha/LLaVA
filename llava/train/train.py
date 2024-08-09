@@ -66,6 +66,7 @@ class ModelArguments:
     mm_patch_merge_type: Optional[str] = field(default='flat')
     mm_vision_select_feature: Optional[str] = field(default="patch")
     loss_weights: bool = field(default=False)
+    mode: Optional[str] = field(default="softmax")
 
 
 @dataclass
@@ -937,6 +938,7 @@ def train(attn_implementation=None):
         )
     model.config.use_cache = False
     model.loss_weights = model_args.loss_weights
+    model.mode = model_args.mode
 
     if model_args.freeze_backbone:
         model.model.requires_grad_(False)

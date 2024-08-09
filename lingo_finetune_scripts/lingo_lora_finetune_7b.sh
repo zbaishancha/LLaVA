@@ -26,9 +26,9 @@ torchrun --nproc_per_node=8 \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/llava-v1.5-7b-task-lora-2ep \
-    --exp_name fine_tune_llava_lora_lingoqa_2ep \
-    --num_train_epochs 2 \
+    --output_dir ./checkpoints/llava-v1.5-7b-task-lora-loss-weights \
+    --exp_name fine_tune_llava_lora_lingoqa_loss_weights \
+    --num_train_epochs 1 \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 1 \
     --gradient_accumulation_steps 1 \
@@ -45,4 +45,7 @@ torchrun --nproc_per_node=8 \
     --gradient_checkpointing True \
     --dataloader_num_workers 4 \
     --lazy_preprocess True \
-    --report_to tensorboard
+    --report_to tensorboard \
+    --crop False \
+    --loss_weights True \
+    --mode "softmax"
