@@ -14,6 +14,18 @@ from llava.mm_utils import tokenizer_image_token, process_images, get_model_name
 from PIL import Image
 import math
 
+def center_crop(sample, crop_ratio):
+    width, height = sample.size
+    crop_width = int(width * crop_ratio)
+    crop_height = int(height * crop_ratio)
+    left = (width - crop_width) // 2
+    top = (height - crop_height) // 2
+    right = (width + crop_width) // 2
+    bottom = (height + crop_height) // 2
+    crop_img = sample.crop((left, top, right, bottom))
+    # crop_img.show()
+    # crop_img.save('path_to_save_cropped_image.jpg')
+    return crop_img
 
 def split_list(lst, n):
     """Split a list into n (roughly) equal-sized chunks"""
@@ -32,7 +44,8 @@ def eval_model(args):
     model_path = os.path.expanduser(args.model_path)
     model_name = get_model_name_from_path(model_path)
     tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, args.model_base, model_name)
-    if "lingoqa" in args.question_file.lower():
+    if "lingoqa" in args.question_file.lower() \
+        or "drivelm" in args.question_file.lower():
         with open(args.question_file, 'r', encoding='utf-8') as file:  
             data = json.load(file)
         questions = []
@@ -47,7 +60,8 @@ def eval_model(args):
     answers_file = os.path.expanduser(args.answers_file)
     os.makedirs(os.path.dirname(answers_file), exist_ok=True)
     ans_file = open(answers_file, "w")
-    questions = questions[::2]
+    if "lingoqa" in args.question_file.lower():
+        questions = questions[::2]    
     for line in tqdm(questions):
         idx = line["question_id"]
         image_path_list = line["image_path_list"]
@@ -67,7 +81,15 @@ def eval_model(args):
         
         images = []
         for img_path in image_path_list:
-            images.append(Image.open(os.path.join(args.image_folder, img_path)).convert('RGB'))
+            if "nuscenes" in img_path:
+                img = Image.open(os.path.join(args.image_folder, img_path).replace('data/nuscenes/samples/', "")).convert('RGB')
+            else:
+                img = Image.open(os.path.join(args.image_folder, img_path)).convert('RGB')
+            images.append(img)
+            if args.crop:
+                crop_img = center_crop(img, args.crop_ratio)
+                images.append(crop_img)
+        
         image_tensor = process_images(images, image_processor, model.config)
 
         with torch.inference_mode():
@@ -108,6 +130,8 @@ if __name__ == "__main__":
     parser.add_argument("--temperature", type=float, default=0.2)
     parser.add_argument("--top_p", type=float, default=None)
     parser.add_argument("--num_beams", type=int, default=1)
+    parser.add_argument('--crop', action='store_true', default=False)
+    parser.add_argument("--crop_ratio", type=float, default=0.65)
     args = parser.parse_args()
 
     eval_model(args)
