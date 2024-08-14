@@ -35,6 +35,8 @@ ckpts*
 serve_images/
 
 playground/
+cambrian/
 *.jpg
 mlruns/
 *.csv
+*.gif
