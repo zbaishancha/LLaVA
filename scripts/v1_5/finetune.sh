@@ -1,27 +1,37 @@
 #!/bin/bash
+set -e -x  # stop on 1st error, debug output of args used
 
-deepspeed llava/train/train_mem.py \
+export CLEARML_API_ACCESS_KEY="E6D6L0KI5ZI79TKD1AW5"
+export CLEARML_API_SECRET_KEY="wlGIykhRIQIJ7Em8duOkkBSrZhR67WGsbSBFp1WvkwfG5eepsT"
+
+torchrun --nproc_per_node=8 \
+    --nnodes=${WORLD_SIZE} \
+    --node_rank=${RANK} \
+    --master_addr=${MASTER_ADDR} \
+    --master_port=${MASTER_PORT} \
+    llava/train/train_mem.py \
     --deepspeed ./scripts/zero3.json \
-    --model_name_or_path lmsys/vicuna-13b-v1.5 \
+    --model_name_or_path /mnt/csi-data-aly/shared/public/haozhou/checkpoints/vicuna-7b-v1.5 \
     --version v1 \
     --data_path ./playground/data/llava_v1_5_mix665k.json \
     --image_folder ./playground/data \
-    --vision_tower openai/clip-vit-large-patch14-336 \
-    --pretrain_mm_mlp_adapter ./checkpoints/llava-v1.5-13b-pretrain/mm_projector.bin \
+    --vision_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/dinov2-large \
+    --pretrain_mm_mlp_adapter ./checkpoints/llava-v1.5-7b-pretrain-dinov2-large/mm_projector.bin \
     --mm_projector_type mlp2x_gelu \
-    --mm_vision_select_layer -2 \
+    --mm_vision_select_layer -1 \
     --mm_use_im_start_end False \
     --mm_use_im_patch_token False \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/llava-v1.5-13b \
+    --output_dir ./checkpoints/llava-v1.5-7b-finetune-dinov2-large \
+    --exp_name finetune_llava_dinov2_large \
     --num_train_epochs 1 \
-    --per_device_train_batch_size 16 \
+    --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 4 \
     --gradient_accumulation_steps 1 \
     --evaluation_strategy "no" \
-    --save_strategy "steps" \
+    --save_strategy "epoch" \
     --save_steps 50000 \
     --save_total_limit 1 \
     --learning_rate 2e-5 \
@@ -30,8 +40,8 @@ deepspeed llava/train/train_mem.py \
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
     --tf32 True \
-    --model_max_length 2048 \
+    --model_max_length 7168 \
     --gradient_checkpointing True \
     --dataloader_num_workers 4 \
     --lazy_preprocess True \
-    --report_to wandb
+    --report_to tensorboard
