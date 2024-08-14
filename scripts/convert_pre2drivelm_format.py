@@ -2,9 +2,9 @@ import json
 import pandas as pd
 import jsonlines
 import copy
-pre_json_file = 'results/llava-v1.5-7b-task-answer-llava-v1.jsonl'
-test_eval_data_path = 'playground/data/LingoQA/val.json'
-save_file_path = 'lingo_output_llava_v1.5_7b_answer-llava-v1.csv'
+pre_json_file = 'results/llava-v1.5-7b-task-lora-drivelm.jsonl'
+test_eval_data_path = 'playground/data/DriveLM/val_llama_q_only.json'
+save_file_path = 'llava-v1.5-7b-task-lora-drivelm.json'
 
 
 """
@@ -32,9 +32,10 @@ for item, test_data in zip(data, test_eval_data_list):
     assert item["question_id"] == test_data['id']
     sample = dict()
     sample["id"] = item['question_id']
-    sample['question'] = item['prompt']
+    sample['question'] = test_data["conversations"][0]["value"]
     sample["gt_answer"] = test_data["conversations"][1]["value"]
     sample['answer'] = item['text']
+    out_data.append(sample)
 
 
 with open(save_file_path, 'w') as  f:
