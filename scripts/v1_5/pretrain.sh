@@ -15,7 +15,7 @@ torchrun --nproc_per_node=8 \
     --version plain \
     --data_path ./playground/data/LLaVA-Pretrain/blip_laion_cc_sbu_558k.json \
     --image_folder ./playground/data/LLaVA-Pretrain/images \
-    --vision_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/dinov2-large \
+    --vision_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/clip-vit-large-patch14-336 \
     --mm_projector_type mlp2x_gelu \
     --tune_mm_mlp_adapter True \
     --mm_vision_select_layer -1 \
@@ -24,8 +24,8 @@ torchrun --nproc_per_node=8 \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/llava-v1.5-7b-pretrain-dinov2-large \
-    --exp_name pretrain_llava_dinov2_large \
+    --output_dir ./checkpoints/llava-v1.5-7b-pretrain-qa-vit \
+    --exp_name pretrain_llava_qa_vit \
     --num_train_epochs 1 \
     --per_device_train_batch_size 8 \
     --per_device_eval_batch_size 1 \
@@ -40,7 +40,7 @@ torchrun --nproc_per_node=8 \
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
     --tf32 True \
-    --model_max_length 7168 \
+    --model_max_length 2048 \
     --gradient_checkpointing True \
     --dataloader_num_workers 4 \
     --lazy_preprocess True \

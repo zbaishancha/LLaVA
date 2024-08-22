@@ -25,7 +25,7 @@ from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, D
 
 def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", use_flash_attn=False, **kwargs):
     kwargs = {"device_map": device_map, **kwargs}
-
+    non_lora_trainables = None
     if device != "cuda":
         kwargs['device_map'] = {"": device}
 
@@ -163,5 +163,16 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         context_len = model.config.max_sequence_length
     else:
         context_len = 2048
-
+    if non_lora_trainables is not None:
+        from llava.model.multimodal_encoder.clip_encoder import QACLIPVisionTower
+        if isinstance(model.model.vision_tower, QACLIPVisionTower):
+            print(f'unexpected keys: {model.load_state_dict(non_lora_trainables, strict=False)[1]}')
+    
+    if model_base is None:
+        from safetensors.torch import load_file
+        qa_state_dict = load_file(model_path + "/model-00003-of-00003.safetensors")
+        model.load_state_dict(qa_state_dict, strict=False)
+        
+    model.cuda()
+    
     return tokenizer, model, image_processor, context_len

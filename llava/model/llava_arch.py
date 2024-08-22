@@ -137,10 +137,63 @@ class LlavaMetaForCausalLM(ABC):
     def get_vision_tower(self):
         return self.get_model().get_vision_tower()
 
-    def encode_images(self, images):
-        image_features = self.get_model().get_vision_tower()(images)
+    def encode_images(self, images, instruct_embeds=None, attention_mask_new=None):
+        if instruct_embeds is not None:
+            image_features = self.get_model().get_vision_tower()(images,
+                                                                instruct_states=instruct_embeds, 
+                                                                instruct_masks=attention_mask_new)
+        else:
+            image_features = self.get_model().get_vision_tower()(images)
         image_features = self.get_model().mm_projector(image_features)
         return image_features
+
+
+    def qa_vit_get_instruct(self, input_ids, attention_mask=None, labels=None, max_len=30):
+        processed_input_ids = []
+        processed_attention_mask = [] if attention_mask is not None else None
+
+        for i in range(input_ids.size(0)):
+            input_id = input_ids[i]
+            start_index = (input_id == -200).nonzero(as_tuple=True)[0].item() + 1
+            
+            end_index = None
+            if labels is not None:
+                label = labels[i]
+                end_index = (label != -100).nonzero(as_tuple=True)[0][0].item()
+            if end_index is not None:
+                sliced_input_id = input_id[start_index:end_index]
+            else:
+                sliced_input_id = input_id[start_index:]
+
+            if attention_mask is not None:
+                attn_mask = attention_mask[i]
+                if end_index is not None:
+                    sliced_attn_mask = attn_mask[start_index:end_index]
+                else:
+                    sliced_attn_mask = attn_mask[start_index:]
+
+            if len(sliced_input_id) > max_len:
+                sliced_input_id = sliced_input_id[:max_len]
+                if attention_mask is not None:
+                    sliced_attn_mask = sliced_attn_mask[:max_len]
+            else:
+                padding_length = max_len - len(sliced_input_id)
+                sliced_input_id = torch.cat([sliced_input_id, torch.zeros(padding_length, dtype=torch.long, device=input_ids.device)])
+                if attention_mask is not None:
+                    sliced_attn_mask = torch.cat([sliced_attn_mask, torch.zeros(padding_length, dtype=torch.long, device=attention_mask.device)])
+
+            processed_input_ids.append(sliced_input_id)
+            if attention_mask is not None:
+                processed_attention_mask.append(sliced_attn_mask)
+
+        processed_input_ids = torch.stack(processed_input_ids)
+
+        instruct_embeds = self.get_model().embed_tokens(processed_input_ids)
+        
+        if attention_mask is not None:
+            processed_attention_mask = torch.stack(processed_attention_mask)
+
+        return instruct_embeds, processed_attention_mask
 
     def prepare_inputs_labels_for_multimodal(
         self, input_ids, position_ids, attention_mask, past_key_values, labels,
@@ -154,7 +207,17 @@ class LlavaMetaForCausalLM(ABC):
             if type(images) is list:
                 images = [x.unsqueeze(0) if x.ndim == 3 else x for x in images]
             concat_images = torch.cat([image for image in images], dim=0)
-            image_features = self.encode_images(concat_images)
+            if hasattr(self.get_model().get_vision_tower(), "integration_point"):
+                instruct_embeds, attention_mask_new = self.qa_vit_get_instruct(input_ids, attention_mask, labels)
+                if concat_images.size(0) != instruct_embeds.size(0): # multi imgs
+                    num = concat_images.size(0) // instruct_embeds.size(0)
+                    B, L, D = instruct_embeds.shape
+                    instruct_embeds = instruct_embeds.unsqueeze(1).repeat(1, num, 1, 1).reshape(-1, L, D)
+                    if attention_mask_new is not None:
+                        attention_mask_new = attention_mask_new.unsqueeze(1).repeat(1, num, 1).reshape(-1, L)
+                image_features = self.encode_images(concat_images, instruct_embeds, attention_mask_new)
+            else:
+                image_features = self.encode_images(concat_images)
             split_sizes = [image.shape[0] for image in images]
             image_features = torch.split(image_features, split_sizes, dim=0)
             mm_patch_merge_type = getattr(self.config, 'mm_patch_merge_type', 'flat')
@@ -199,7 +262,15 @@ class LlavaMetaForCausalLM(ABC):
             else:
                 raise ValueError(f"Unexpected mm_patch_merge_type: {self.config.mm_patch_merge_type}")
         else:
-            image_features = self.encode_images(images)
+            if hasattr(self.get_model().get_vision_tower(), "integration_point"):
+                instruct_embeds, attention_mask_new = self.qa_vit_get_instruct(input_ids, attention_mask, labels)
+                if images.size(0) != instruct_embeds.size(0): # multi imgs
+                    num = images.size(0) // instruct_embeds.size(0)
+                    B, L, D = instruct_embeds.shape
+                    instruct_embeds = instruct_embeds.unsqueeze(1).repeat(1, num, 1, 1).reshape(-1, L, D)
+                    if attention_mask_new is not None:
+                        attention_mask_new = attention_mask_new.unsqueeze(1).repeat(1, num, 1).reshape(-1, L)
+            image_features = self.encode_images(images, instruct_embeds, attention_mask_new)
 
         # TODO: image start / end is not implemented here to support pretraining.
         if getattr(self.config, 'tune_mm_mlp_adapter', False) and getattr(self.config, 'mm_use_im_start_end', False):

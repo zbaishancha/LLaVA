@@ -75,7 +75,8 @@ class DataArguments:
     image_folder: Optional[str] = field(default=None)
     image_aspect_ratio: str = 'square'
     crop_ratio: float = 0.65
-    crop: bool = True
+    crop: bool = False
+    out_question_id: bool = False
     
 
 @dataclass
@@ -191,7 +192,7 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer,
 
     if getattr(trainer.args, "tune_mm_mlp_adapter", False):
         # Only save Adapter
-        keys_to_match = ['mm_projector']
+        keys_to_match = ['mm_projector', 'instruct']
         if getattr(trainer.args, "use_im_start_end", False):
             keys_to_match.extend(['embed_tokens', 'embed_in'])
 
@@ -673,6 +674,7 @@ class LazySupervisedDataset(Dataset):
         self.data_args = data_args
         self.crop = data_args.crop
         self.crop_ratio = data_args.crop_ratio
+        self.out_question_id = data_args.out_question_id
 
     def __len__(self):
         return len(self.list_data_dict)
@@ -778,6 +780,10 @@ class LazySupervisedDataset(Dataset):
             # image does not exist in the data, but the model is multimodal
             crop_size = self.data_args.image_processor.crop_size
             data_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
+
+        if self.out_question_id: # only support one conversation
+            #TODO: out question id in qavit format
+            pass
         return data_dict
 
 
