@@ -174,5 +174,6 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         model.load_state_dict(qa_state_dict, strict=False)
         
     model.cuda()
-    
+    model.requires_grad_(False)
+    model.eval()
     return tokenizer, model, image_processor, context_len

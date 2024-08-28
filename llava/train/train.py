@@ -64,7 +64,8 @@ class ModelArguments:
     mm_use_im_patch_token: bool = field(default=True)
     mm_patch_merge_type: Optional[str] = field(default='flat')
     mm_vision_select_feature: Optional[str] = field(default="patch")
-
+    mm_instruct_pretrain: Optional[str] = field(default=None)
+    use_qa: bool = field(default=False)
 
 @dataclass
 class DataArguments:
@@ -77,6 +78,7 @@ class DataArguments:
     crop_ratio: float = 0.65
     crop: bool = False
     out_question_id: bool = False
+    max_length: Optional[int] = field(default=None)
     
 
 @dataclass
@@ -500,6 +502,44 @@ def preprocess_v1(
         labels=targets,
     )
 
+def preprocess_instruct(    
+    sources,
+    tokenizer: transformers.PreTrainedTokenizer,
+    data_dict: dict,
+    max_length: int=30):
+    
+    questions = []
+    for i, source in enumerate(sources):
+        for conversation in source:
+            if conversation['from'] == 'human':
+                if "<image>\n" in conversation["value"]:
+                    questions.append(conversation["value"].replace("<image>\n", ''))
+                elif "\n<image>" in conversation["value"]:
+                    questions.append(conversation["value"].replace("\n<image>", ''))
+                elif "\n<image>\n" in conversation["value"]:
+                    questions.append(conversation["value"].replace("\n<image>\n", ''))
+    
+    def join_strings(strings):
+        return ' '.join(strings)
+    
+    questions = join_strings(questions)
+    
+    results = tokenizer(questions,
+                        return_tensors="pt",
+                        padding="longest",
+                        max_length=max_length,
+                        truncation=True)
+    
+    instruct_ids, instruct_mask = results.input_ids, results.attention_mask
+    
+    if instruct_ids.size(1) < max_length:
+        padding_length = max_length - instruct_ids.size(1)
+        instruct_ids = torch.nn.functional.pad(instruct_ids, (0, padding_length), value=0)
+        instruct_mask = torch.nn.functional.pad(instruct_mask, (0, padding_length), value=0)
+    
+    data_dict['instruct_ids'] = instruct_ids.squeeze(0)
+    data_dict['instruct_mask'] = instruct_mask.squeeze(0)
+    return data_dict
 
 def preprocess_mpt(
     sources,
@@ -675,7 +715,9 @@ class LazySupervisedDataset(Dataset):
         self.crop = data_args.crop
         self.crop_ratio = data_args.crop_ratio
         self.out_question_id = data_args.out_question_id
-
+        self.max_length = data_args.max_length
+        self.num_patches = 576
+        
     def __len__(self):
         return len(self.list_data_dict)
 
@@ -780,10 +822,13 @@ class LazySupervisedDataset(Dataset):
             # image does not exist in the data, but the model is multimodal
             crop_size = self.data_args.image_processor.crop_size
             data_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
-
-        if self.out_question_id: # only support one conversation
-            #TODO: out question id in qavit format
-            pass
+        
+        if self.out_question_id:
+            num_images = len(image_file) if isinstance(image_file, list) else 1
+            data_dict = preprocess_instruct(sources, self.tokenizer, 
+                                            data_dict=data_dict, 
+                                            max_length=(self.tokenizer.model_max_length - num_images*self.num_patches) \
+                                                if self.max_length is None else self.max_length)
         return data_dict
 
 
@@ -793,8 +838,8 @@ class DataCollatorForSupervisedDataset(object):
     tokenizer: transformers.PreTrainedTokenizer
     
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
-        input_ids, labels = tuple([instance[key] for instance in instances]
-                                  for key in ("input_ids", "labels"))
+        input_ids, labels, instruct_ids, instruct_mask = tuple([instance[key] for instance in instances]
+                                  for key in ("input_ids", "labels", "instruct_ids", "instruct_mask"))
         input_ids = torch.nn.utils.rnn.pad_sequence(
             input_ids,
             batch_first=True,
@@ -808,6 +853,8 @@ class DataCollatorForSupervisedDataset(object):
             input_ids=input_ids,
             labels=labels,
             attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
+            instruct_ids=torch.stack(instruct_ids, dim=0),
+            instruct_mask=torch.stack(instruct_mask, dim=0),
         )
         if 'image' in instances[0]:
             
@@ -983,6 +1030,11 @@ def train(attn_implementation=None):
             model.requires_grad_(False)
             for p in model.get_model().mm_projector.parameters():
                 p.requires_grad = True
+            from llava.model.multimodal_encoder.clip_encoder import QACLIPVisionTower
+            if isinstance(model.model.vision_tower, QACLIPVisionTower):
+                for name, param in model.model.vision_tower.named_parameters():
+                    if 'instruct' in name:  # qa-vit components are named with instruct and are trainables
+                        param.requires_grad = True
 
         model.config.freeze_mm_mlp_adapter = training_args.freeze_mm_mlp_adapter
         if training_args.freeze_mm_mlp_adapter:

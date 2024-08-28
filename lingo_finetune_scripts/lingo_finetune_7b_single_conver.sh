@@ -10,14 +10,11 @@ torchrun --nproc_per_node=8 \
     --master_addr=${MASTER_ADDR} \
     --master_port=${MASTER_PORT} \
     llava/train/train_mem.py \
-    --lora_enable True \
-    --lora_r 128 \
-    --lora_alpha 256 \
-    --mm_projector_lr 2e-5 \
     --deepspeed ./scripts/zero3.json \
     --model_name_or_path /mnt/csi-data-aly/shared/public/haozhou/checkpoints/LLaVA/llava-v1.5-7b \
     --version v1 \
-    --data_path ./playground/data/LingoQA/train.json \
+    --data_path ./playground/data/llava_v1_5_mix665k_single_conversation.json \
+    --image_folder ./playground/data \
     --vision_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/clip-vit-large-patch14-336 \
     --mm_projector_type mlp2x_gelu \
     --mm_vision_select_layer -2 \
@@ -26,32 +23,34 @@ torchrun --nproc_per_node=8 \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/llava-v1.5-7b-task-lora-qa-vit-v2 \
-    --exp_name fine_tune_llava_lora_lingoqa_qa_vit_v2 \
+    --output_dir ./checkpoints/llava-v1.5-7b-single-conversation \
+    --exp_name fine_tune_llava_single_conversation \
     --num_train_epochs 1 \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 1 \
     --gradient_accumulation_steps 1 \
     --evaluation_strategy "no" \
     --save_strategy "epoch" \
+    --save_steps 50000 \
     --save_total_limit 1 \
-    --learning_rate 2e-4 \
+    --learning_rate 2e-5 \
     --weight_decay 0. \
     --warmup_ratio 0.03 \
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
     --tf32 True \
-    --model_max_length 3072 \
+    --model_max_length 2048 \
     --gradient_checkpointing True \
     --dataloader_num_workers 4 \
     --lazy_preprocess True \
     --report_to tensorboard \
     --crop False \
+    --use_qa True \
     --out_question_id True \
-    --max_length  30 \
-    --use_qa True
+    --max_length 30
 
-    # --nnodes=${WORLD_SIZE} \
-    # --node_rank=${RANK} \
-    # --master_addr=${MASTER_ADDR} \
-    # --master_port=${MASTER_PORT} \
+# multi nodes
+# --nnodes=${WORLD_SIZE} \
+# --node_rank=${RANK} \
+# --master_addr=${MASTER_ADDR} \
+# --master_port=${MASTER_PORT} \

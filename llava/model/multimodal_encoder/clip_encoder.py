@@ -187,8 +187,8 @@ class QACLIPVisionTower(nn.Module):
         else:
             self.vision_tower = CLIPVisionModel.from_pretrained(self.vision_tower_name)
 
-        if args is not None and getattr(args, "pretrain_mm_mlp_adapter", None) is not None:
-            instruct_weights = torch.load(args.pretrain_mm_mlp_adapter, map_location='cpu')
+        if args is not None and getattr(args, "mm_instruct_pretrain", None) is not None:
+            instruct_weights = torch.load(args.mm_instruct_pretrain, map_location='cpu')
             instruct_weights_real = dict()
             for k,v in instruct_weights.items():
                 if 'instruct' in k:

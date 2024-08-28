@@ -67,7 +67,11 @@ class LlavaMetaModel:
                 vision_tower = self.vision_tower[0]
             else:
                 vision_tower = self.vision_tower
-            vision_tower.load_model()
+            from llava.model.multimodal_encoder.clip_encoder import QACLIPVisionTower
+            if isinstance(vision_tower, QACLIPVisionTower):
+                vision_tower.load_model(args=model_args)
+            else:
+                vision_tower.load_model()
 
         self.config.use_mm_proj = True
         self.config.mm_projector_type = getattr(model_args, 'mm_projector_type', 'linear')
@@ -197,7 +201,7 @@ class LlavaMetaForCausalLM(ABC):
 
     def prepare_inputs_labels_for_multimodal(
         self, input_ids, position_ids, attention_mask, past_key_values, labels,
-        images, image_sizes=None
+        images, image_sizes=None, instruct_ids=None, instruct_mask=None
     ):
         vision_tower = self.get_vision_tower()
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
@@ -208,7 +212,7 @@ class LlavaMetaForCausalLM(ABC):
                 images = [x.unsqueeze(0) if x.ndim == 3 else x for x in images]
             concat_images = torch.cat([image for image in images], dim=0)
             if hasattr(self.get_model().get_vision_tower(), "integration_point"):
-                instruct_embeds, attention_mask_new = self.qa_vit_get_instruct(input_ids, attention_mask, labels)
+                instruct_embeds, attention_mask_new = self.get_model().embed_tokens(instruct_ids), instruct_mask
                 if concat_images.size(0) != instruct_embeds.size(0): # multi imgs
                     num = concat_images.size(0) // instruct_embeds.size(0)
                     B, L, D = instruct_embeds.shape
@@ -263,13 +267,7 @@ class LlavaMetaForCausalLM(ABC):
                 raise ValueError(f"Unexpected mm_patch_merge_type: {self.config.mm_patch_merge_type}")
         else:
             if hasattr(self.get_model().get_vision_tower(), "integration_point"):
-                instruct_embeds, attention_mask_new = self.qa_vit_get_instruct(input_ids, attention_mask, labels)
-                if images.size(0) != instruct_embeds.size(0): # multi imgs
-                    num = images.size(0) // instruct_embeds.size(0)
-                    B, L, D = instruct_embeds.shape
-                    instruct_embeds = instruct_embeds.unsqueeze(1).repeat(1, num, 1, 1).reshape(-1, L, D)
-                    if attention_mask_new is not None:
-                        attention_mask_new = attention_mask_new.unsqueeze(1).repeat(1, num, 1).reshape(-1, L)
+                instruct_embeds, attention_mask_new = self.get_model().embed_tokens(instruct_ids), instruct_mask
             image_features = self.encode_images(images, instruct_embeds, attention_mask_new)
 
         # TODO: image start / end is not implemented here to support pretraining.

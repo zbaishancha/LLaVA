@@ -52,6 +52,24 @@ def eval_model(args):
         idx = line["question_id"]
         image_path_list = line["image_path_list"]
         qs = line["text"]
+        instruct_ids = None
+        instruct_mask = None
+        from llava.model.multimodal_encoder.clip_encoder import QACLIPVisionTower
+        if isinstance(model.model.vision_tower, QACLIPVisionTower):
+            max_length = args.max_length
+            results = tokenizer(qs,
+                                return_tensors="pt",
+                                padding="longest",
+                                max_length=max_length,
+                                truncation=True)
+            
+            instruct_ids, instruct_mask = results.input_ids, results.attention_mask
+            
+            if instruct_ids.size(1) < max_length:
+                padding_length = max_length - instruct_ids.size(1)
+                instruct_ids = torch.nn.functional.pad(instruct_ids, (0, padding_length), value=0)
+                instruct_mask = torch.nn.functional.pad(instruct_mask, (0, padding_length), value=0)
+    
         cur_prompt = qs
         if model.config.mm_use_im_start_end:
             qs = DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN + '\n' + qs
@@ -81,7 +99,9 @@ def eval_model(args):
                 num_beams=args.num_beams,
                 # no_repeat_ngram_size=3,
                 max_new_tokens=1024,
-                use_cache=True)
+                use_cache=True,
+                instruct_ids=instruct_ids.cuda(),
+                instruct_mask=instruct_mask.cuda())
 
         outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
 
@@ -108,6 +128,7 @@ if __name__ == "__main__":
     parser.add_argument("--temperature", type=float, default=0.2)
     parser.add_argument("--top_p", type=float, default=None)
     parser.add_argument("--num_beams", type=int, default=1)
+    parser.add_argument("--max_length", type=int, default=30)
     args = parser.parse_args()
 
     eval_model(args)
