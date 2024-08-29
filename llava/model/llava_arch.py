@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
 
-from .multimodal_encoder.builder import build_vision_tower
+from .multimodal_encoder.builder import build_vision_tower, build_text_tower
 from .multimodal_projector.builder import build_vision_projector
 
 from llava.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
@@ -39,13 +39,24 @@ class LlavaMetaModel:
                 self.image_newline = nn.Parameter(
                     torch.empty(config.hidden_size, dtype=self.dtype)
                 )
+        if hasattr(config, "mm_text_tower"):
+            self.text_tower = build_text_tower(config)
 
     def get_vision_tower(self):
         vision_tower = getattr(self, 'vision_tower', None)
         if type(vision_tower) is list:
             vision_tower = vision_tower[0]
         return vision_tower
+    
+    def get_text_tower(self):
+        text_tower = getattr(self, 'text_tower', None)
+        return text_tower
 
+    def initialize_text_modules(self, model_args):
+        if self.get_text_tower() is None:
+            self.text_tower = build_text_tower(model_args)
+        self.text_tower.load_model(model_args)
+        
     def initialize_vision_modules(self, model_args, fsdp=None):
         vision_tower = model_args.vision_tower
         mm_vision_select_layer = model_args.mm_vision_select_layer
@@ -136,15 +147,19 @@ class LlavaMetaForCausalLM(ABC):
 
     def get_vision_tower(self):
         return self.get_model().get_vision_tower()
+    
+    def get_text_tower(self):
+        return self.get_model().get_text_tower()
 
-    def encode_images(self, images):
+    def encode_images(self, images, question_ids):
         image_features = self.get_model().get_vision_tower()(images)
+        image_features = self.get_model().get_text_tower()(question_ids, image_features)
         image_features = self.get_model().mm_projector(image_features)
         return image_features
 
     def prepare_inputs_labels_for_multimodal(
         self, input_ids, position_ids, attention_mask, past_key_values, labels,
-        images, image_sizes=None
+        images, image_sizes=None, question_ids=None,
     ):
         vision_tower = self.get_vision_tower()
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
@@ -154,7 +169,11 @@ class LlavaMetaForCausalLM(ABC):
             if type(images) is list:
                 images = [x.unsqueeze(0) if x.ndim == 3 else x for x in images]
             concat_images = torch.cat([image for image in images], dim=0)
-            image_features = self.encode_images(concat_images)
+            if concat_images.size(0) != question_ids.size(0): # multi imgs
+                num = concat_images.size(0) // question_ids.size(0)
+                B, L = question_ids.shape
+                question_ids = question_ids.unsqueeze(1).repeat(1, num, 1).reshape(-1, L)
+            image_features = self.encode_images(concat_images, question_ids)
             split_sizes = [image.shape[0] for image in images]
             image_features = torch.split(image_features, split_sizes, dim=0)
             mm_patch_merge_type = getattr(self.config, 'mm_patch_merge_type', 'flat')

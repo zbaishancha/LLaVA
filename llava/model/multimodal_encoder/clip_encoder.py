@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
-
-from transformers import CLIPVisionModel, CLIPImageProcessor, CLIPVisionConfig
+import os
+import json
+import torch.nn.functional as F
+from transformers import CLIPVisionModel, CLIPImageProcessor, CLIPVisionConfig, AutoTokenizer, CLIPTextModel
 
 
 class CLIPVisionTower(nn.Module):
@@ -145,3 +147,73 @@ class CLIPVisionTowerS2(CLIPVisionTower):
     @property
     def hidden_size(self):
         return self.config.hidden_size * len(self.s2_scales)
+
+class CrossModalAttention(nn.Module):
+    def __init__(self, vision_dim, text_dim, top_k_ratio, temperature=1.0):
+        super(CrossModalAttention, self).__init__()
+        self.vision_dim = vision_dim
+        self.text_dim = text_dim
+        self.top_k_ratio = top_k_ratio
+        self.text_projection = nn.Linear(text_dim, vision_dim)
+        self.temperature = temperature
+    
+    def forward(self, image_features, text_embedding):
+
+        projected_text = self.text_projection(text_embedding)
+        projected_text = projected_text.unsqueeze(1)
+
+        image_features /= image_features.norm(dim=-1, keepdim=True)
+        projected_text /= projected_text.norm(dim=-1, keepdim=True)
+        
+        # * projected_text.size(-1) ** -0.5
+        attention_scores = (image_features @ projected_text.transpose(-2, -1)) 
+        attention_scores = attention_scores.squeeze(-1)
+        attention_scores = attention_scores / self.temperature
+        attention_scores = F.softmax(attention_scores, dim=-1)
+
+        x = F.softmax((attention_scores - attention_scores.max(dim=-1, keepdim=True).values))
+        F.softmax((attention_scores[0] - attention_scores[0].max().values))
+        top_k = int(image_features.size(1) * self.top_k_ratio)
+         
+        top_k_values, top_k_indices = torch.topk(attention_scores, top_k, dim=-1)
+        
+        mask = torch.zeros_like(attention_scores, dtype=torch.bool)
+        mask.scatter_(dim=-1, index=top_k_indices, src=torch.ones_like(top_k_indices, dtype=torch.bool))
+
+        selected_image_features = image_features[mask].view(-1, top_k, self.vision_dim)
+
+        return selected_image_features, mask
+
+
+class CLIPTextTower(nn.Module):
+    def __init__(self, text_tower, args, **kwargs) -> None:
+        super().__init__()
+        self.is_loaded = False
+        self.text_tower = text_tower
+        config_path = os.path.join(text_tower, "config.json")
+        assert os.path.exists(config_path)
+
+        with open(config_path, 'r') as file:
+            self.config = json.load(file)
+        
+        self.vision_dim = self.config["vision_config_dict"]["hidden_size"]
+        self.text_dim = self.config["text_config_dict"]["hidden_size"]
+    
+    def load_model(self, model_args, device_map=None):
+        if self.is_loaded:
+            print('{} is already loaded, `load_model` called again, skipping.'.format(self.text_tower))
+            return
+        top_k_ratio = getattr(model_args, "top_k_ratio", 0.75)
+        temperature = getattr(model_args, "temperature", 1.0)
+        self.text_tower = CLIPTextModel.from_pretrained(self.text_tower, device_map=device_map)
+        self.text_tower.requires_grad_(False)
+        self.feature_select_module = CrossModalAttention(self.vision_dim, self.text_dim, top_k_ratio, temperature)
+        self.feature_select_module.requires_grad_(True)
+        self.is_loaded = True
+
+    def forward(self, input_ids, image_features):
+        outputs = self.text_tower(input_ids)
+        pooled_output = outputs.pooler_output
+        selected_image_features, _ = self.feature_select_module(image_features, pooled_output)
+
+        return selected_image_features
