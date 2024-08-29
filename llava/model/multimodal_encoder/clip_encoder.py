@@ -171,8 +171,6 @@ class CrossModalAttention(nn.Module):
         attention_scores = attention_scores / self.temperature
         attention_scores = F.softmax(attention_scores, dim=-1)
 
-        x = F.softmax((attention_scores - attention_scores.max(dim=-1, keepdim=True).values))
-        F.softmax((attention_scores[0] - attention_scores[0].max().values))
         top_k = int(image_features.size(1) * self.top_k_ratio)
          
         top_k_values, top_k_indices = torch.topk(attention_scores, top_k, dim=-1)
