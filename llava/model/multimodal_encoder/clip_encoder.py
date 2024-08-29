@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
-
+import os
+import json
+from safetensors.torch import load_file
 from transformers import CLIPVisionModel, CLIPImageProcessor, CLIPVisionConfig
 from .clip_qavit import InstructCLIPVisionModel
 
@@ -197,10 +199,25 @@ class QACLIPVisionTower(nn.Module):
         for name, param in self.vision_tower.named_parameters():
             if 'instruct' not in name:  # qa-vit components are named with instruct and are trainables
                 param.requires_grad = False
+        
+        if os.path.exists(os.path.join(args.model_name_or_path, \
+                                            "model.safetensors.index.json")):
+            path = os.path.join(args.model_name_or_path, "model.safetensors.index.json")
+            with open(path, 'r') as file:
+                model_state_dict_index_map = json.load(file)
+            v = model_state_dict_index_map["weight_map"]["model.vision_tower.vision_tower.vision_model.encoder.layers.12.self_attn.instruction_gate"]
+            vision_model_state_dict = load_file(os.path.join(args.model_name_or_path, v))
+            vision_model_state_dict_real = dict()
+            for k,v in vision_model_state_dict.items():
+                vision_model_state_dict_real[k.replace('model.vision_tower.vision_tower.', '')] = v
+            missing, unexpected = self.vision_tower.load_state_dict(vision_model_state_dict_real, strict=False)
+            assert len(missing) == 0
+            self.vision_tower.requires_grad_(False) # pretrain with single conversation
         self.is_loaded = True
 
     def feature_select(self, image_forward_outs):
         image_features = image_forward_outs.hidden_states[self.select_layer]
+        image_features = image_features[:, 1:] # get patch features
         return image_features
 
     def forward(self, pixel_values, **kwargs):

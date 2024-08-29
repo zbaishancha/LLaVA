@@ -526,16 +526,11 @@ def preprocess_instruct(
     
     results = tokenizer(questions,
                         return_tensors="pt",
-                        padding="longest",
+                        padding="max_length",
                         max_length=max_length,
                         truncation=True)
     
     instruct_ids, instruct_mask = results.input_ids, results.attention_mask
-    
-    if instruct_ids.size(1) < max_length:
-        padding_length = max_length - instruct_ids.size(1)
-        instruct_ids = torch.nn.functional.pad(instruct_ids, (0, padding_length), value=0)
-        instruct_mask = torch.nn.functional.pad(instruct_mask, (0, padding_length), value=0)
     
     data_dict['instruct_ids'] = instruct_ids.squeeze(0)
     data_dict['instruct_mask'] = instruct_mask.squeeze(0)
