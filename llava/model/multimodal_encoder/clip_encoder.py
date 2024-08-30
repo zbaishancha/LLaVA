@@ -168,7 +168,7 @@ class QACLIPVisionTower(nn.Module):
         elif getattr(args, 'unfreeze_mm_vision_tower', False):
             self.load_model(args=args)
 
-    def load_model(self, device_map=None, args=None):
+    def load_model(self, device_map=None, args=None, model_base=None):
         self.image_processor = CLIPImageProcessor.from_pretrained(self.vision_tower_name)
 
         if self.clip_type == 'qavit':
@@ -200,19 +200,29 @@ class QACLIPVisionTower(nn.Module):
             if 'instruct' not in name:  # qa-vit components are named with instruct and are trainables
                 param.requires_grad = False
         
-        if os.path.exists(os.path.join(args.model_name_or_path, \
-                                            "model.safetensors.index.json")):
-            path = os.path.join(args.model_name_or_path, "model.safetensors.index.json")
-            with open(path, 'r') as file:
+        if args is not None or model_base is not None:
+            base_path = args.model_name_or_path if args is not None else model_base
+            if base_path is None:
+                raise ValueError("Both args and model_base cannot be None.")
+
+            index_path = os.path.join(base_path, "model.safetensors.index.json")
+            with open(index_path, 'r') as file:
                 model_state_dict_index_map = json.load(file)
-            v = model_state_dict_index_map["weight_map"]["model.vision_tower.vision_tower.vision_model.encoder.layers.12.self_attn.instruction_gate"]
-            vision_model_state_dict = load_file(os.path.join(args.model_name_or_path, v))
-            vision_model_state_dict_real = dict()
-            for k,v in vision_model_state_dict.items():
-                vision_model_state_dict_real[k.replace('model.vision_tower.vision_tower.', '')] = v
+
+            weight_key = "model.vision_tower.vision_tower.vision_model.encoder.layers.12.self_attn.instruction_gate"
+            weight_map_path = model_state_dict_index_map["weight_map"][weight_key]
+
+            vision_model_state_dict = load_file(os.path.join(base_path, weight_map_path))
+
+            vision_model_state_dict_real = {
+                k.replace('model.vision_tower.vision_tower.', ''): v
+                for k, v in vision_model_state_dict.items()
+            }
+
             missing, unexpected = self.vision_tower.load_state_dict(vision_model_state_dict_real, strict=False)
             assert len(missing) == 0
-            self.vision_tower.requires_grad_(False) # pretrain with single conversation
+
+            self.vision_tower.requires_grad_(False)  # pretrain with single conversation
         self.is_loaded = True
 
     def feature_select(self, image_forward_outs):
