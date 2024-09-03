@@ -4,7 +4,7 @@ import os
 import json
 import torch.nn.functional as F
 from transformers import CLIPVisionModel, CLIPImageProcessor, CLIPVisionConfig, AutoTokenizer, CLIPTextModel
-
+from safetensors.torch import load_file
 
 class CLIPVisionTower(nn.Module):
     def __init__(self, vision_tower, args, delay_load=False):
@@ -197,17 +197,27 @@ class CLIPTextTower(nn.Module):
         self.vision_dim = self.config["vision_config_dict"]["hidden_size"]
         self.text_dim = self.config["text_config_dict"]["hidden_size"]
     
-    def load_model(self, model_args, device_map=None):
+    def load_model(self, model_args=None, device_map=None, model_path=None, top_k_ratio=None, temperature=None):
         if self.is_loaded:
             print('{} is already loaded, `load_model` called again, skipping.'.format(self.text_tower))
             return
-        top_k_ratio = getattr(model_args, "top_k_ratio", 0.75)
-        temperature = getattr(model_args, "temperature", 1.0)
+        if model_args is not None:
+            top_k_ratio = getattr(model_args, "top_k_ratio", 0.75)
+            temperature = getattr(model_args, "temperature", 0.05)
+
         self.text_tower = CLIPTextModel.from_pretrained(self.text_tower, device_map=device_map)
         self.text_tower.requires_grad_(False)
         self.feature_select_module = CrossModalAttention(self.vision_dim, self.text_dim, top_k_ratio, temperature)
         self.feature_select_module.requires_grad_(True)
         self.is_loaded = True
+        if model_path is not None:
+            state_dict = load_file(os.path.join(model_path, "model-00003-of-00003.safetensors"))
+            state_dict_real = {
+                k.replace('model.text_tower.', ''): v
+                for k, v in state_dict.items()
+            }
+            missing, unexpected = self.load_state_dict(state_dict_real, strict=False)
+            assert len(missing) ==0 
 
     def forward(self, input_ids, image_features):
         outputs = self.text_tower(input_ids)

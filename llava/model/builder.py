@@ -158,10 +158,18 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         if device_map != 'auto':
             vision_tower.to(device=device_map, dtype=torch.float16)
         image_processor = vision_tower.image_processor
+        
+        text_tower = model.get_text_tower()
+        if not text_tower.is_loaded:
+            text_tower.load_model(device_map=device_map, model_path=model_path, top_k_ratio=0.75, temperature=0.05)
+        if device_map != 'auto':
+            text_tower.to(device=device_map, dtype=torch.float16)
 
     if hasattr(model.config, "max_sequence_length"):
         context_len = model.config.max_sequence_length
     else:
         context_len = 2048
-
+    model.cuda()
+    model.requires_grad_(False)
+    model = model.to(dtype=torch.float16)
     return tokenizer, model, image_processor, context_len
