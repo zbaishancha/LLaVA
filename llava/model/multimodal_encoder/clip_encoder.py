@@ -2,8 +2,9 @@ import torch
 import torch.nn as nn
 import os
 import json
+import math
 import torch.nn.functional as F
-from transformers import CLIPVisionModel, CLIPImageProcessor, CLIPVisionConfig, AutoTokenizer, CLIPTextModel
+from transformers import CLIPVisionModel, CLIPImageProcessor, CLIPVisionConfig, AutoTokenizer, CLIPModel, CLIPTextModel
 from safetensors.torch import load_file
 
 class CLIPVisionTower(nn.Module):
@@ -149,39 +150,57 @@ class CLIPVisionTowerS2(CLIPVisionTower):
         return self.config.hidden_size * len(self.s2_scales)
 
 class CrossModalAttention(nn.Module):
-    def __init__(self, vision_dim, text_dim, top_k_ratio, temperature=1.0):
+    def __init__(self, config):
         super(CrossModalAttention, self).__init__()
-        self.vision_dim = vision_dim
-        self.text_dim = text_dim
-        self.top_k_ratio = top_k_ratio
-        self.text_projection = nn.Linear(text_dim, vision_dim)
-        self.temperature = temperature
+        self.config = config
+        self.embed_dim = config['projection_dim']
+        self.num_heads = 12
+        self.head_dim = self.embed_dim // self.num_heads
+        self.dropout = 0.1
+        
+        self.vision_embed_dim = config["vision_config_dict"]["hidden_size"]
+        self.q_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.k_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.v_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.out_proj = nn.Linear(self.embed_dim, self.vision_embed_dim)
+        self.attn_dropout = nn.Dropout(0.1)
+        self.resid_dropout = nn.Dropout(0.1)
+        self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
     
     def forward(self, image_features, text_embedding):
+        B, T, C = image_features.size() # batch size, sequence length, embedding dimensionality (n_embd)
+        C = int(C)
+        T = int(T)
+        # calculate query, key, values for all heads in batch and move head forward to be the batch dim
+        q = self.q_proj(image_features)
+        k = self.k_proj(text_embedding)
+        v = self.v_proj(text_embedding)
+        if self.flash:
+            k = k.view(B, k.size(1), self.num_heads, C // self.num_heads).transpose(1, 2) # (B, nh, T, hs)
+        else:
+            k = k.view(B, T, self.num_heads, C // self.num_heads).permute((0, 2, 3, 1)) # (B, nh, hs, T)
+        q = q.view(B, T, self.num_heads, C // self.num_heads).transpose(1, 2) # (B, nh, T, hs)
+        v = v.view(B, v.size(1), self.num_heads, C // self.num_heads).transpose(1, 2) # (B, nh, T, hs)
 
-        projected_text = self.text_projection(text_embedding)
-        projected_text = projected_text.unsqueeze(1)
-
-        image_features /= image_features.norm(dim=-1, keepdim=True)
-        projected_text /= projected_text.norm(dim=-1, keepdim=True)
+        if self.flash:
+            # efficient attention using Flash Attention CUDA kernels
+            # Full attention set is_causal as False
+            y = torch.nn.functional.scaled_dot_product_attention(q, k, v, 
+                                                                 attn_mask=None, 
+                                                                 dropout_p=self.dropout if self.training else 0., 
+                                                                 is_causal=False)
+        else:
+            # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
+            att = (q @ k) * (1.0 / math.sqrt(q.size(-1)))
+            att = F.softmax(att, dim=-1)
+            att = self.attn_dropout(att)
+            y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+        y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
+        # output projection
+        y = self.resid_dropout(self.out_proj(y))
         
-        # * projected_text.size(-1) ** -0.5
-        attention_scores = (image_features @ projected_text.transpose(-2, -1)) 
-        attention_scores = attention_scores.squeeze(-1)
-        attention_scores = attention_scores / self.temperature
-        attention_scores = F.softmax(attention_scores, dim=-1)
-
-        top_k = int(image_features.size(1) * self.top_k_ratio)
-         
-        top_k_values, top_k_indices = torch.topk(attention_scores, top_k, dim=-1)
+        return y
         
-        mask = torch.zeros_like(attention_scores, dtype=torch.bool)
-        mask.scatter_(dim=-1, index=top_k_indices, src=torch.ones_like(top_k_indices, dtype=torch.bool))
-
-        selected_image_features = image_features[mask].view(-1, top_k, self.vision_dim)
-
-        return selected_image_features, mask
-
 
 class CLIPTextTower(nn.Module):
     def __init__(self, text_tower, args, **kwargs) -> None:
@@ -194,22 +213,33 @@ class CLIPTextTower(nn.Module):
         with open(config_path, 'r') as file:
             self.config = json.load(file)
         
-        self.vision_dim = self.config["vision_config_dict"]["hidden_size"]
-        self.text_dim = self.config["text_config_dict"]["hidden_size"]
-    
-    def load_model(self, model_args=None, device_map=None, model_path=None, top_k_ratio=None, temperature=None):
+        self.vision_embed_dim = self.config["vision_config_dict"]["hidden_size"]
+        self.text_embed_dim = self.config["text_config_dict"]["hidden_size"]
+        self.projection_dim = self.config['projection_dim']
+        
+    def load_model(self, model_args=None, device_map=None, model_path=None):
         if self.is_loaded:
             print('{} is already loaded, `load_model` called again, skipping.'.format(self.text_tower))
             return
-        if model_args is not None:
-            top_k_ratio = getattr(model_args, "top_k_ratio", 0.75)
-            temperature = getattr(model_args, "temperature", 0.05)
 
-        self.text_tower = CLIPTextModel.from_pretrained(self.text_tower, device_map=device_map)
-        self.text_tower.requires_grad_(False)
-        self.feature_select_module = CrossModalAttention(self.vision_dim, self.text_dim, top_k_ratio, temperature)
-        self.feature_select_module.requires_grad_(True)
-        self.is_loaded = True
+        self.visual_projection = nn.Linear(self.vision_embed_dim, self.projection_dim, bias=False)
+        self.text_projection = nn.Linear(self.text_embed_dim, self.projection_dim, bias=False)
+        self.visual_projection.requires_grad_(True)
+        self.text_projection.requires_grad_(True)
+
+        if os.path.exists(os.path.join(self.text_tower, "pytorch_model.bin")):
+            state_dict = torch.load(os.path.join(self.text_tower, "pytorch_model.bin"))
+            state_dict_real = {"visual_projection.weight": state_dict['visual_projection.weight'],
+                               "text_projection.weight": state_dict['text_projection.weight']}
+            missing, unexpected = self.load_state_dict(state_dict_real, strict=False)
+            assert len(missing) == 0
+
+        self.text_model = CLIPTextModel.from_pretrained(self.text_tower, device_map=device_map)
+        self.text_model.requires_grad_(False)
+        
+        self.question_aware_module = CrossModalAttention(self.config)
+        self.question_aware_module.requires_grad_(True)
+
         if model_path is not None:
             state_dict = load_file(os.path.join(model_path, "model-00003-of-00003.safetensors"))
             state_dict_real = {
@@ -218,10 +248,12 @@ class CLIPTextTower(nn.Module):
             }
             missing, unexpected = self.load_state_dict(state_dict_real, strict=False)
             assert len(missing) ==0 
+        self.is_loaded = True
 
     def forward(self, input_ids, image_features):
-        outputs = self.text_tower(input_ids)
-        pooled_output = outputs.pooler_output
-        selected_image_features, _ = self.feature_select_module(image_features, pooled_output)
-
-        return selected_image_features
+        outputs = self.text_model(input_ids)
+        text_embedding = outputs.last_hidden_state
+        text_embedding = self.text_projection(text_embedding)
+        image_features = self.visual_projection(image_features)
+        image_features = self.question_aware_module(image_features, text_embedding)
+        return image_features

@@ -161,7 +161,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         
         text_tower = model.get_text_tower()
         if not text_tower.is_loaded:
-            text_tower.load_model(device_map=device_map, model_path=model_path, top_k_ratio=0.75, temperature=0.05)
+            text_tower.load_model(device_map=device_map, model_path=model_path)
         if device_map != 'auto':
             text_tower.to(device=device_map, dtype=torch.float16)
 

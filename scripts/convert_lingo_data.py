@@ -77,5 +77,5 @@ for data_path in data_path_list:
 print(f"total data length: {len(conversations)}")
 
 
-with open("playground/data/LingoQA/val.json", 'w') as json_file:
+with open("playground/data/LingoQA/train.json", 'w') as json_file:
     json.dump(conversations, json_file, indent=4)
