@@ -165,6 +165,7 @@ class CrossModalAttention(nn.Module):
         self.out_proj = nn.Linear(self.embed_dim, self.vision_embed_dim)
         self.attn_dropout = nn.Dropout(0.1)
         self.resid_dropout = nn.Dropout(0.1)
+        self.ln = nn.LayerNorm(self.vision_embed_dim)
         self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
     
     def forward(self, image_features, text_embedding):
@@ -252,8 +253,9 @@ class CLIPTextTower(nn.Module):
 
     def forward(self, input_ids, image_features):
         outputs = self.text_model(input_ids)
+        ori_img_features = image_features.clone()
         text_embedding = outputs.last_hidden_state
         text_embedding = self.text_projection(text_embedding)
         image_features = self.visual_projection(image_features)
-        image_features = self.question_aware_module(image_features, text_embedding)
+        image_features = ori_img_features + self.question_aware_module(image_features, text_embedding)
         return image_features
