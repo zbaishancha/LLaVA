@@ -79,7 +79,7 @@ class DataArguments:
     image_aspect_ratio: str = 'square'
     crop_ratio: float = 0.65
     crop: bool = True
-    out_clip_text_ids: bool = False
+    out_clip_text_ids: bool = True
     max_length: int = 20
     out_prompt_img: bool = True
 
@@ -834,8 +834,8 @@ class DataCollatorForSupervisedDataset(object):
     tokenizer: transformers.PreTrainedTokenizer
     
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
-        input_ids, labels = tuple([instance[key] for instance in instances]
-                                  for key in ("input_ids", "labels"))
+        input_ids, labels, question_ids = tuple([instance[key] for instance in instances]
+                                  for key in ("input_ids", "labels", "question_ids"))
         input_ids = torch.nn.utils.rnn.pad_sequence(
             input_ids,
             batch_first=True,
@@ -848,7 +848,8 @@ class DataCollatorForSupervisedDataset(object):
         batch = dict(
             input_ids=input_ids,
             labels=labels,
-            attention_mask=input_ids.ne(self.tokenizer.pad_token_id)
+            attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
+            question_ids=torch.stack(question_ids, dim=0)
         )
         if 'image' in instances[0]:
             
@@ -1017,6 +1018,8 @@ def train(attn_implementation=None):
     if model_args.prompt_tower is not None:
         model.get_model().initialize_prompt_modules(model_args)
         prompt_tower = model.get_prompt_tower()
+        if not prompt_tower.is_loaded:
+            prompt_tower.load_model()
         prompt_tower.to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16, device=training_args.device)
         
         data_args.image_processor_prompt = prompt_tower.image_processor

@@ -160,7 +160,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         image_processor = vision_tower.image_processor
         
         prompt_tower = model.get_prompt_tower()
-        if not prompt_tower.is_loaded:
+        if not prompt_tower.is_loaded and prompt_tower is not None:
             prompt_tower.load_model(device_map=device_map, model_path=model_path)
         if device_map != 'auto':
             prompt_tower.to(device=device_map, dtype=torch.float16)
@@ -170,6 +170,10 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         context_len = model.config.max_sequence_length
     else:
         context_len = 2048
+        
+    if 'lora' in model_name.lower() and model_base is not None:
+        model.load_state_dict(non_lora_trainables, strict=False)
+    
     model.cuda()
     model.requires_grad_(False)
     model = model.to(dtype=torch.float16)

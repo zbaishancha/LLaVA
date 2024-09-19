@@ -27,8 +27,8 @@ torchrun --nproc_per_node=8 \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/llava-v1.5-7b-task-lora-img-token-reweight-from-dino \
-    --exp_name fine_tune_llava_lora_lingoqa_img_token_reweight_from_dino \
+    --output_dir ./checkpoints/llava-v1.5-7b-task-lora-img-token-reweight-one-cross \
+    --exp_name fine_tune_llava_lora_lingoqa_img_token_reweight_one_cross \
     --num_train_epochs 1 \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 1 \

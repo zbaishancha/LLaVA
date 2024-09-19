@@ -41,11 +41,7 @@ class CrossModalAttention(nn.Module):
     def __init__(self, config):
         super(CrossModalAttention, self).__init__()
 
-        config_path = os.path.join(config, 'config.json')
-        with open(config_path,'r',encoding='utf8')as f:
-            self.config = json.load(f)
-
-        self.embed_dim = self.config['hidden_size']
+        self.embed_dim = 1024
         self.num_heads = 16
         self.head_dim = self.embed_dim // self.num_heads
         self.dropout = 0.1
@@ -163,7 +159,9 @@ class DinoVisionTower(BaseVisionTower):
         self.vision_tower.requires_grad_(self.unfreeze_mm_vision_tower)
         
         self.prompt_module = CrossModalAttention(self.vision_tower_name)
-        self.prompt_module.requires_grad_((True))
+        self.text_projection = nn.Linear(4096, 1024)
+        self.text_projection.requires_grad_(True)
+        self.prompt_module.requires_grad_(True)
         self.is_loaded = True
         if model_path is not None and os.path.exists(os.path.join(model_path, "model-00003-of-00003.safetensors")):
             from safetensors.torch import load_file
@@ -231,10 +229,11 @@ class DinoVisionTower(BaseVisionTower):
             # logger.warning(f"interp_features shape: {interp_features.shape}")
             return interp_features
     
-    def forward(self, images, image_features):
-        ori_image_features = image_features.clone()
+    def forward(self, images, input_embeds, image_features):
         prompt_image_features = self._forward(images)
-        image_features = ori_image_features + self.prompt_module(image_features, prompt_image_features)
+        text_embedding = self.text_projection(input_embeds)
+        prompt_features = torch.cat([image_features, prompt_image_features, text_embedding], dim=1)
+        image_features = image_features + self.prompt_module(image_features, prompt_features)
         return image_features
 
 
