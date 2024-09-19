@@ -151,9 +151,9 @@ class LlavaMetaForCausalLM(ABC):
     def get_text_tower(self):
         return self.get_model().get_text_tower()
 
-    def encode_images(self, images, question_ids):
+    def encode_images(self, images, inputs_embeds):
         image_features = self.get_model().get_vision_tower()(images)
-        image_features = self.get_model().get_text_tower()(question_ids, image_features)
+        image_features = self.get_model().get_text_tower()(inputs_embeds, image_features)
         image_features = self.get_model().mm_projector(image_features)
         return image_features
 
@@ -169,11 +169,12 @@ class LlavaMetaForCausalLM(ABC):
             if type(images) is list:
                 images = [x.unsqueeze(0) if x.ndim == 3 else x for x in images]
             concat_images = torch.cat([image for image in images], dim=0)
-            if concat_images.size(0) != question_ids.size(0): # multi imgs
-                num = concat_images.size(0) // question_ids.size(0)
-                B, L = question_ids.shape
-                question_ids = question_ids.unsqueeze(1).repeat(1, num, 1).reshape(-1, L)
-            image_features = self.encode_images(concat_images, question_ids)
+            inputs_embeds = self.get_model().embed_tokens(question_ids)
+            if concat_images.size(0) != inputs_embeds.size(0): # multi imgs
+                num = concat_images.size(0) // inputs_embeds.size(0)
+                B, L, C = inputs_embeds.shape
+                inputs_embeds = inputs_embeds.unsqueeze(1).repeat(1, num, 1, 1).reshape(-1, L, C)
+            image_features = self.encode_images(concat_images, inputs_embeds)
             split_sizes = [image.shape[0] for image in images]
             image_features = torch.split(image_features, split_sizes, dim=0)
             mm_patch_merge_type = getattr(self.config, 'mm_patch_merge_type', 'flat')

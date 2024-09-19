@@ -153,8 +153,8 @@ class CrossModalAttention(nn.Module):
     def __init__(self, config):
         super(CrossModalAttention, self).__init__()
         self.config = config
-        self.embed_dim = config['projection_dim']
-        self.num_heads = 12
+        self.embed_dim = config["vision_config_dict"]["hidden_size"]
+        self.num_heads = 16
         self.head_dim = self.embed_dim // self.num_heads
         self.dropout = 0.1
         
@@ -223,20 +223,20 @@ class CLIPTextTower(nn.Module):
             print('{} is already loaded, `load_model` called again, skipping.'.format(self.text_tower))
             return
 
-        self.visual_projection = nn.Linear(self.vision_embed_dim, self.projection_dim, bias=False)
-        self.text_projection = nn.Linear(self.text_embed_dim, self.projection_dim, bias=False)
-        self.visual_projection.requires_grad_(True)
+        # self.visual_projection = nn.Linear(self.vision_embed_dim, self.projection_dim, bias=False)
+        # self.visual_projection.requires_grad_(True)
+        self.text_projection = nn.Linear(4096, self.vision_embed_dim)
         self.text_projection.requires_grad_(True)
 
-        if os.path.exists(os.path.join(self.text_tower, "pytorch_model.bin")):
-            state_dict = torch.load(os.path.join(self.text_tower, "pytorch_model.bin"))
-            state_dict_real = {"visual_projection.weight": state_dict['visual_projection.weight'],
-                               "text_projection.weight": state_dict['text_projection.weight']}
-            missing, unexpected = self.load_state_dict(state_dict_real, strict=False)
-            assert len(missing) == 0
+        # if os.path.exists(os.path.join(self.text_tower, "pytorch_model.bin")):
+        #     state_dict = torch.load(os.path.join(self.text_tower, "pytorch_model.bin"))
+        #     state_dict_real = {"visual_projection.weight": state_dict['visual_projection.weight'],
+        #                        "text_projection.weight": state_dict['text_projection.weight']}
+        #     missing, unexpected = self.load_state_dict(state_dict_real, strict=False)
+        #     assert len(missing) == 0
 
-        self.text_model = CLIPTextModel.from_pretrained(self.text_tower, device_map=device_map)
-        self.text_model.requires_grad_(False)
+        # self.text_model = CLIPTextModel.from_pretrained(self.text_tower, device_map=device_map)
+        # self.text_model.requires_grad_(False)
         
         self.question_aware_module = CrossModalAttention(self.config)
         self.question_aware_module.requires_grad_(True)
@@ -251,11 +251,12 @@ class CLIPTextTower(nn.Module):
             assert len(missing) ==0 
         self.is_loaded = True
 
-    def forward(self, input_ids, image_features):
-        outputs = self.text_model(input_ids)
+    def forward(self, input_embeds, image_features):
+        # outputs = self.text_model(input_ids)
+        # outputs = input_embeds
         ori_img_features = image_features.clone()
-        text_embedding = outputs.last_hidden_state
+        text_embedding = input_embeds
         text_embedding = self.text_projection(text_embedding)
-        image_features = self.visual_projection(image_features)
+        # image_features = self.visual_projection(image_features)
         image_features = ori_img_features + self.question_aware_module(image_features, text_embedding)
         return image_features
