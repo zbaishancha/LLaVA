@@ -48,7 +48,8 @@ import pyarrow.parquet as pq
 }
 """
 
-data_path_list = ["playground/data/LingoQA/evaluation/val.parquet"]
+data_path_list = ["playground/data/LingoQA/action/train.parquet",
+                  "playground/data/LingoQA/scenery/train.parquet"]
 
 conversations = []
 
@@ -76,5 +77,5 @@ for data_path in data_path_list:
 print(f"total data length: {len(conversations)}")
 
 
-with open("playground/data/LingoQA/val.json", 'w') as json_file:
+with open("playground/data/LingoQA/train.json", 'w') as json_file:
     json.dump(conversations, json_file, indent=4)

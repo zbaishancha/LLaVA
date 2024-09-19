@@ -2,9 +2,9 @@ import json
 import pandas as pd
 import jsonlines
 import copy
-pre_json_file = 'results/llava-v1.5-7b-task-answer-llava-v1.jsonl'
+pre_json_file = 'results/llava-v1.5-7b-task-img-token-reweight-v2.jsonl'
 ori_val_file = 'playground/data/LingoQA/val.json'
-csv_file_path = 'lingo_output_llava_v1.5_7b_answer-llava-v1.csv'
+csv_file_path = 'llava-v1.5-7b-task-img-token-reweight-v2.csv'
 
 
 data = []

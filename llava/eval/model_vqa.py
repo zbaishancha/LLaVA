@@ -4,13 +4,13 @@ import os
 import json
 from tqdm import tqdm
 import shortuuid
-
+import transformers
 from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from llava.conversation import conv_templates, SeparatorStyle
 from llava.model.builder import load_pretrained_model
 from llava.utils import disable_torch_init
 from llava.mm_utils import tokenizer_image_token, process_images, get_model_name_from_path
-
+from llava.train.train import CLIP_PATH
 from PIL import Image
 import math
 
@@ -32,6 +32,7 @@ def eval_model(args):
     model_path = os.path.expanduser(args.model_path)
     model_name = get_model_name_from_path(model_path)
     tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, args.model_base, model_name)
+    clip_tokenizer = transformers.AutoTokenizer.from_pretrained(CLIP_PATH)
     if "lingoqa" in args.question_file.lower():
         with open(args.question_file, 'r', encoding='utf-8') as file:  
             data = json.load(file)
@@ -53,6 +54,13 @@ def eval_model(args):
         image_path_list = line["image_path_list"]
         qs = line["text"]
         cur_prompt = qs
+        
+        question_ids = clip_tokenizer(qs,
+                        return_tensors="pt",
+                        padding='max_length',
+                        max_length=20,
+                        truncation=True).input_ids
+        
         if model.config.mm_use_im_start_end:
             qs = DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN + '\n' + qs
         else:
@@ -81,7 +89,8 @@ def eval_model(args):
                 num_beams=args.num_beams,
                 # no_repeat_ngram_size=3,
                 max_new_tokens=1024,
-                use_cache=True)
+                use_cache=True,
+                question_ids=question_ids.cuda())
 
         outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
 
@@ -109,5 +118,4 @@ if __name__ == "__main__":
     parser.add_argument("--top_p", type=float, default=None)
     parser.add_argument("--num_beams", type=int, default=1)
     args = parser.parse_args()
-
     eval_model(args)
