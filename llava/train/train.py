@@ -57,7 +57,7 @@ class ModelArguments:
     freeze_backbone: bool = field(default=False)
     tune_mm_mlp_adapter: bool = field(default=False)
     vision_tower: Optional[str] = field(default=None)
-    text_tower: Optional[str] = field(default=None)
+    prompt_tower: Optional[str] = field(default=None)
     mm_vision_select_layer: Optional[int] = field(default=-1)   # default to the last layer
     pretrain_mm_mlp_adapter: Optional[str] = field(default=None)
     mm_projector_type: Optional[str] = field(default='linear')
@@ -79,8 +79,9 @@ class DataArguments:
     image_aspect_ratio: str = 'square'
     crop_ratio: float = 0.65
     crop: bool = True
-    out_clip_text_ids: bool = True
+    out_clip_text_ids: bool = False
     max_length: int = 20
+    out_prompt_img: bool = True
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -176,7 +177,7 @@ def get_mm_adapter_state_maybe_zero_3(named_params, keys_to_match):
 def find_all_linear_names(model):
     cls = torch.nn.Linear
     lora_module_names = set()
-    multimodal_keywords = ['mm_projector', 'vision_tower', 'vision_resampler', 'text_tower']
+    multimodal_keywords = ['mm_projector', 'vision_tower', 'vision_resampler', 'prompt_tower']
     for name, module in model.named_modules():
         if any(mm_keyword in name for mm_keyword in multimodal_keywords):
             continue
@@ -708,6 +709,7 @@ class LazySupervisedDataset(Dataset):
         self.crop = data_args.crop
         self.crop_ratio = data_args.crop_ratio
         self.out_clip_text_ids = data_args.out_clip_text_ids
+        self.out_prompt_img = data_args.out_prompt_img
         if data_args.out_clip_text_ids:
             self.clip_tokenizer = transformers.AutoTokenizer.from_pretrained(CLIP_PATH)
             self.max_length = data_args.max_length
@@ -754,6 +756,7 @@ class LazySupervisedDataset(Dataset):
             image_file = self.list_data_dict[i]['image']
             image_folder = self.data_args.image_folder
             processor = self.data_args.image_processor
+            prompt_processor = self.data_args.image_processor_prompt
             if isinstance(image_file, list):
                 image = []
                 for img_file in image_file:
@@ -786,8 +789,11 @@ class LazySupervisedDataset(Dataset):
                         result.paste(pil_img, ((height - width) // 2, 0))
                         return result
                 if isinstance(image, list):
+                    prompt_image = [copy.deepcopy(img) for img in image]
                     image = [expand2square(img, tuple(int(x*255) for x in processor.image_mean)) for img in image]
                     image = [processor.preprocess(img, return_tensors='pt')['pixel_values'][0] for img in image]
+                    prompt_image = [expand2square(img, tuple(int(x*255) for x in prompt_processor.image_mean)) for img in prompt_image]
+                    prompt_image = [prompt_processor.preprocess(img, return_tensors='pt')['pixel_values'][0] for img in prompt_image]
                 else:
                     image = expand2square(image, tuple(int(x*255) for x in processor.image_mean))
                     image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
@@ -817,7 +823,9 @@ class LazySupervisedDataset(Dataset):
             crop_size = self.data_args.image_processor.crop_size
             data_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
         if self.out_clip_text_ids:
-            data_dict = preprocess_question(sources, self.clip_tokenizer, data_dict, max_length=self.max_length)
+            data_dict = preprocess_question(sources, self.tokenizer, data_dict, max_length=self.max_length)
+        if self.out_prompt_img:
+            data_dict['prompt_image'] = prompt_image
         return data_dict
 
 @dataclass
@@ -826,8 +834,8 @@ class DataCollatorForSupervisedDataset(object):
     tokenizer: transformers.PreTrainedTokenizer
     
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
-        input_ids, labels, question_ids = tuple([instance[key] for instance in instances]
-                                  for key in ("input_ids", "labels", "question_ids"))
+        input_ids, labels = tuple([instance[key] for instance in instances]
+                                  for key in ("input_ids", "labels"))
         input_ids = torch.nn.utils.rnn.pad_sequence(
             input_ids,
             batch_first=True,
@@ -840,8 +848,7 @@ class DataCollatorForSupervisedDataset(object):
         batch = dict(
             input_ids=input_ids,
             labels=labels,
-            attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
-            question_ids=torch.stack(question_ids, dim=0)
+            attention_mask=input_ids.ne(self.tokenizer.pad_token_id)
         )
         if 'image' in instances[0]:
             
@@ -854,7 +861,18 @@ class DataCollatorForSupervisedDataset(object):
                     batch['images'] = torch.stack(images)
                 else:
                     batch['images'] = images
-
+                    
+        if 'prompt_image' in instances[0]:
+            prompt_images = [instance['prompt_image'] for instance in instances]
+            if isinstance(prompt_images[0], list):
+                prompt_images = torch.stack([torch.stack(img, dim=0) for img in prompt_images], dim = 0)
+                batch['prompt_images'] = prompt_images
+            else:
+                if all(x is not None and x.shape == images[0].shape for x in prompt_images):
+                    batch['prompt_images'] = torch.stack(prompt_images)
+                else:
+                    batch['prompt_images'] = prompt_images
+        
         return batch
 
 
@@ -996,10 +1014,12 @@ def train(attn_implementation=None):
         else:
             conversation_lib.default_conversation = conversation_lib.conv_templates["vicuna_v1"]
     
-    if model_args.text_tower is not None:
-        model.get_model().initialize_text_modules(model_args)
-        text_tower = model.get_text_tower()
-        text_tower.to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16, device=training_args.device)
+    if model_args.prompt_tower is not None:
+        model.get_model().initialize_prompt_modules(model_args)
+        prompt_tower = model.get_prompt_tower()
+        prompt_tower.to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16, device=training_args.device)
+        
+        data_args.image_processor_prompt = prompt_tower.image_processor
     
     if model_args.vision_tower is not None:
         model.get_model().initialize_vision_modules(

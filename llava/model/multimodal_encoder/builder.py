@@ -21,11 +21,11 @@ def build_vision_tower(vision_tower_cfg, **kwargs):
     
     raise ValueError(f'Unknown vision tower: {vision_tower}')
 
-def build_text_tower(text_tower_cfg, **kwargs):
-    text_tower = getattr(text_tower_cfg, 'mm_text_tower', getattr(text_tower_cfg, 'text_tower', None))
-    is_absolute_path_exists = os.path.exists(text_tower)
+def build_prompt_tower(prompt_tower_cfg, **kwargs):
+    prompt_tower = getattr(prompt_tower_cfg, 'mm_prompt_tower', getattr(prompt_tower_cfg, 'prompt_tower', None))
+    is_absolute_path_exists = os.path.exists(prompt_tower)
 
-    if is_absolute_path_exists or text_tower.startswith("openai") or text_tower.startswith("laion") or "ShareGPT4V" in text_tower:
-        return CLIPTextTower(text_tower, args=text_tower_cfg, **kwargs)
+    if is_absolute_path_exists:
+        return DinoVisionTower(prompt_tower, args=prompt_tower_cfg, **kwargs)
 
-    raise ValueError(f'Unknown vision tower: {text_tower_cfg}')
+    raise ValueError(f'Unknown vision tower: {prompt_tower_cfg}')

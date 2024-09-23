@@ -1,6 +1,9 @@
 import torch
 import torch.nn.functional as F
-
+import torch.nn as nn
+import os
+import math
+import json
 from transformers import Dinov2Model, AutoImageProcessor, Dinov2Config
 
 from .base_encoder import BaseVisionTower
@@ -34,9 +37,64 @@ def extract_res_interp(model_name):
 
     return base_model_name, res, interp
 
+class CrossModalAttention(nn.Module):
+    def __init__(self, config):
+        super(CrossModalAttention, self).__init__()
+
+        config_path = os.path.join(config, 'config.json')
+        with open(config_path,'r',encoding='utf8')as f:
+            self.config = json.load(f)
+
+        self.embed_dim = self.config['hidden_size']
+        self.num_heads = 16
+        self.head_dim = self.embed_dim // self.num_heads
+        self.dropout = 0.1
+        
+        self.q_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.k_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.v_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.out_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.attn_dropout = nn.Dropout(0.1)
+        self.resid_dropout = nn.Dropout(0.1)
+        self.ln = nn.LayerNorm(self.embed_dim)
+        self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
+    
+    def forward(self, image_features, text_embedding):
+        B, T, C = image_features.size() # batch size, sequence length, embedding dimensionality (n_embd)
+        C = int(C)
+        T = int(T)
+        # calculate query, key, values for all heads in batch and move head forward to be the batch dim
+        q = self.q_proj(image_features)
+        k = self.k_proj(text_embedding)
+        v = self.v_proj(text_embedding)
+        if self.flash:
+            k = k.view(B, k.size(1), self.num_heads, C // self.num_heads).transpose(1, 2) # (B, nh, T, hs)
+        else:
+            k = k.view(B, T, self.num_heads, C // self.num_heads).permute((0, 2, 3, 1)) # (B, nh, hs, T)
+        q = q.view(B, T, self.num_heads, C // self.num_heads).transpose(1, 2) # (B, nh, T, hs)
+        v = v.view(B, v.size(1), self.num_heads, C // self.num_heads).transpose(1, 2) # (B, nh, T, hs)
+
+        if self.flash:
+            # efficient attention using Flash Attention CUDA kernels
+            # Full attention set is_causal as False
+            y = torch.nn.functional.scaled_dot_product_attention(q, k, v, 
+                                                                 attn_mask=None, 
+                                                                 dropout_p=self.dropout if self.training else 0., 
+                                                                 is_causal=False)
+        else:
+            # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
+            att = (q @ k) * (1.0 / math.sqrt(q.size(-1)))
+            att = F.softmax(att, dim=-1)
+            att = self.attn_dropout(att)
+            y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+        y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
+        # output projection
+        y = self.resid_dropout(self.out_proj(y))
+        
+        return y
 
 class DinoVisionTower(BaseVisionTower):
-    def __init__(self, vision_tower, args, delay_load=False):
+    def __init__(self, vision_tower, args, delay_load=True):
         super(DinoVisionTower, self).__init__(vision_tower, args, delay_load)
 
         """try to extract an image resolution and interpolation res from the model name string
@@ -66,7 +124,7 @@ class DinoVisionTower(BaseVisionTower):
         self._vision_tower_name = vision_tower
         self.vision_tower_name = base_model_name
         self._image_size = res
-        self._interp_size = interp
+        self._interp_size = 576
         self._patch_size = 14  # default patch size
 
         if not self.delay_load:
@@ -74,7 +132,7 @@ class DinoVisionTower(BaseVisionTower):
         else:
             self.cfg_only = Dinov2Config.from_pretrained(self.vision_tower_name)
 
-    def load_model(self, device_map=None):
+    def load_model(self, device_map=None, model_path=None):
 
         self.vision_tower = Dinov2Model.from_pretrained(self.vision_tower_name)
         """ValueError: Dinov2Model does not support `device_map='auto'`. To implement support, the model class needs to implement the `_no_split_modules` attribute."""
@@ -103,7 +161,19 @@ class DinoVisionTower(BaseVisionTower):
         #print(self._hidden_size, self._patch_size)
 
         self.vision_tower.requires_grad_(self.unfreeze_mm_vision_tower)
+        
+        self.prompt_module = CrossModalAttention(self.vision_tower_name)
+        self.prompt_module.requires_grad_((True))
         self.is_loaded = True
+        if model_path is not None and os.path.exists(os.path.join(model_path, "model-00003-of-00003.safetensors")):
+            from safetensors.torch import load_file
+            state_dict = load_file(os.path.join(model_path, "model-00003-of-00003.safetensors"))
+            state_dict_real = {
+                k.replace('model.prompt_tower.', ''): v
+                for k, v in state_dict.items()
+            }
+            missing, unexpected = self.load_state_dict(state_dict_real, strict=False)
+            assert len(missing) ==0
 
     @property
     def image_size(self):
@@ -160,6 +230,13 @@ class DinoVisionTower(BaseVisionTower):
             interp_features = self.interpolate(image_features)
             # logger.warning(f"interp_features shape: {interp_features.shape}")
             return interp_features
+    
+    def forward(self, images, image_features):
+        ori_image_features = image_features.clone()
+        prompt_image_features = self._forward(images)
+        image_features = ori_image_features + self.prompt_module(image_features, prompt_image_features)
+        return image_features
+
 
     @property
     def num_patches_per_side(self):

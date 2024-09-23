@@ -18,16 +18,17 @@ torchrun --nproc_per_node=8 \
     --model_name_or_path /mnt/csi-data-aly/shared/public/haozhou/checkpoints/LLaVA/llava-v1.5-7b \
     --version v1 \
     --data_path ./playground/data/LingoQA/train.json \
-    --vision_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/dinov2-large \
+    --vision_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/clip-vit-large-patch14-336 \
+    --prompt_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/dinov2-large \
     --mm_projector_type mlp2x_gelu \
-    --mm_vision_select_layer -1 \
+    --mm_vision_select_layer -2 \
     --mm_use_im_start_end False \
     --mm_use_im_patch_token False \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/llava-v1.5-7b-task-lora-dinov2-large \
-    --exp_name fine_tune_llava_lora_lingoqa_dinov2_large \
+    --output_dir ./checkpoints/llava-v1.5-7b-task-lora-img-token-reweight-from-dino \
+    --exp_name fine_tune_llava_lora_lingoqa_img_token_reweight_from_dino \
     --num_train_epochs 1 \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 1 \
@@ -41,8 +42,9 @@ torchrun --nproc_per_node=8 \
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
     --tf32 True \
-    --model_max_length 7168 \
+    --model_max_length 3072 \
     --gradient_checkpointing True \
     --dataloader_num_workers 4 \
     --lazy_preprocess True \
-    --report_to tensorboard
+    --report_to tensorboard \
+    --crop False
