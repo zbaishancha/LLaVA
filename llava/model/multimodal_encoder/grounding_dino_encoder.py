@@ -6,7 +6,7 @@ import math
 import torch.nn.functional as F
 from safetensors.torch import load_file
 
-from transformers import AutoProcessor, GroundingDinoForObjectDetection, GroundingDinoConfig, GroundingDinoImageProcessor
+from transformers import AutoProcessor, GroundingDinoForObjectDetection, GroundingDinoConfig, GroundingDinoImageProcessor, AutoImageProcessor, Mask2FormerForUniversalSegmentation
 
 # from PIL import Image
 # import requests
@@ -44,10 +44,11 @@ class GroundingDinoVisionTower(nn.Module):
             print('{} is already loaded, `load_model` called again, skipping.'.format(self.vision_tower_name))
             return
         
-        self.vision_tower = GroundingDinoForObjectDetection.from_pretrained(self.vision_tower_name)
-        self.image_processor = AutoProcessor.from_pretrained(self.vision_tower_name)
+        # load Mask2Former fine-tuned on Cityscapes semantic segmentation
+        self.vision_tower = Mask2FormerForUniversalSegmentation.from_pretrained(self.vision_tower_name)
+        self.image_processor = AutoImageProcessor.from_pretrained(self.vision_tower_name)
         self.vision_tower.requires_grad_(False)
-        self.class_embeds = nn.Embedding(256, 256)
+        self.class_embeds = nn.Embedding(20, 256)
         self.class_embeds.requires_grad_(True)
         self.num_k = 16
         self.is_loaded = True
@@ -60,26 +61,24 @@ class GroundingDinoVisionTower(nn.Module):
             }
             missing, unexpected = self.load_state_dict(state_dict_real, strict=False)
 
-    def forward(self, multi_images: torch.Tensor, text_ids: torch.Tensor):
-        bm, _, _, _ = multi_images.shape
-        b, _ = text_ids.shape
-        num = bm // b
-        text_ids = text_ids.unsqueeze(1).repeat(1, num, 1).reshape(-1, text_ids.size(-1))
+    def forward(self, multi_images: torch.Tensor):
         self.vision_tower.eval()
         with torch.no_grad():
-            outputs = self.vision_tower(multi_images.to(device=self.device, dtype=self.dtype), text_ids)
-        pred_queries = outputs.last_hidden_state # batch_size, num_queries, dim
-        logits = outputs.logits
-        probs = torch.max(logits, dim=-1) # batch_size, num_queries, num_classes + 1
-        scores = torch.sigmoid(probs.values) # batch_size, num_queries
-        labels = probs.indices  # batch_size, num_queries
+            outputs = self.vision_tower(multi_images.to(device=self.device, dtype=self.dtype))
         
-        _, topk_indices = torch.topk(scores, k=self.num_k, dim=-1)  # batch_size, k
-        topk_labels = labels[torch.arange(bm, device=self.device).unsqueeze(1), topk_indices]
-        object_queries = pred_queries[torch.arange(bm, device=self.device).unsqueeze(1), topk_indices]
-        labels_embed = self.class_embeds(topk_labels)
-        object_queries += labels_embed
-        return object_queries
+        # model predicts class_queries_logits of shape `(batch_size, num_queries)`
+        class_queries_logits = outputs.class_queries_logits
+        mask_queries = outputs.transformer_decoder_last_hidden_state
+        masks_classes = class_queries_logits.softmax(dim=-1)[..., :-1]
+        predicted_classes = torch.argmax(masks_classes, dim=-1) 
+        confidence_scores = torch.max(masks_classes, dim=-1).values
+        _, topk_indices = torch.topk(confidence_scores, k=self.num_k, dim=-1)
+        topk_mask_queries = mask_queries.gather(1, topk_indices.unsqueeze(-1).expand(-1, -1, mask_queries.size(-1)))
+        topk_labels = predicted_classes.gather(1, topk_indices)
+        topk_labels_embeds = self.class_embeds(topk_labels)
+        topk_mask_queries += topk_labels_embeds
+        
+        return topk_mask_queries
 
     @property
     def dummy_feature(self):

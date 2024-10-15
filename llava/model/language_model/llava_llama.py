@@ -69,7 +69,6 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         images: Optional[torch.FloatTensor] = None,
         prompt_images: Optional[torch.FloatTensor] = None,
         object_images: Optional[torch.FloatTensor] = None,
-        object_text_ids: Optional[torch.Tensor] = None,
         image_sizes: Optional[List[List[int]]] = None,
         return_dict: Optional[bool] = None,
         cache_position=None
@@ -94,7 +93,6 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
                 question_ids=question_ids,
                 prompt_images=prompt_images,
                 object_images=object_images,
-                object_text_ids=object_text_ids,
             )
 
         return super().forward(
@@ -119,7 +117,6 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         question_ids: Optional[torch.Tensor] = None,
         prompt_images: Optional[torch.Tensor] = None,
         object_images: Optional[torch.Tensor] = None,
-        object_text_ids: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
         position_ids = kwargs.pop("position_ids", None)
@@ -146,7 +143,6 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
                 question_ids=question_ids,
                 prompt_images=prompt_images,
                 object_images=object_images,
-                object_text_ids=object_text_ids,
             )
         else:
             inputs_embeds = self.get_model().embed_tokens(inputs)

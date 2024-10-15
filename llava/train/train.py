@@ -38,7 +38,6 @@ from llava import deekeeper
 from PIL import Image
 
 CLIP_PATH = "/mnt/csi-data-aly/shared/public/haozhou/checkpoints/clip-vit-large-patch14-336"
-TEXT = "All objects."
 local_rank = None
 
 
@@ -805,7 +804,7 @@ class LazySupervisedDataset(Dataset):
                     prompt_image = [prompt_processor.preprocess(img, return_tensors='pt')['pixel_values'][0] for img in prompt_image]
                     
                     object_image = [expand2square(img, tuple(int(x*255) for x in prompt_processor.image_mean)) for img in object_image]
-                    object_image = [object_processor(images=img, text=TEXT, return_tensors="pt").data['pixel_values'][0] for img in object_image]
+                    object_image = [object_processor.preprocess(img, return_tensors='pt')['pixel_values'][0] for img in object_image]
                 else:
                     image = expand2square(image, tuple(int(x*255) for x in processor.image_mean))
                     image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
@@ -840,7 +839,6 @@ class LazySupervisedDataset(Dataset):
             data_dict['prompt_image'] = prompt_image
         if self.out_object_img:
             data_dict['object_image'] = object_image
-            data_dict['object_text_ids'] = object_processor(text=TEXT, return_tensors="pt").data['input_ids'][0]
         return data_dict
 
 @dataclass
@@ -849,8 +847,8 @@ class DataCollatorForSupervisedDataset(object):
     tokenizer: transformers.PreTrainedTokenizer
     
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
-        input_ids, labels, question_ids, object_text_ids = tuple([instance[key] for instance in instances]
-                                  for key in ("input_ids", "labels", "question_ids", "object_text_ids"))
+        input_ids, labels, question_ids = tuple([instance[key] for instance in instances]
+                                  for key in ("input_ids", "labels", "question_ids"))
         input_ids = torch.nn.utils.rnn.pad_sequence(
             input_ids,
             batch_first=True,
@@ -865,7 +863,6 @@ class DataCollatorForSupervisedDataset(object):
             labels=labels,
             attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
             question_ids=torch.stack(question_ids, dim=0),
-            object_text_ids=torch.stack(object_text_ids, dim=0),
         )
         if 'image' in instances[0]:
             
