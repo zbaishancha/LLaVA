@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
 
-from .multimodal_encoder.builder import build_vision_tower, build_prompt_tower
+from .multimodal_encoder.builder import build_vision_tower, build_prompt_tower, build_object_tower
 from .multimodal_projector.builder import build_vision_projector
 
 from llava.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
@@ -41,6 +41,9 @@ class LlavaMetaModel:
                 )
         if hasattr(config, "mm_prompt_tower"):
             self.prompt_tower = build_prompt_tower(config)
+        
+        if hasattr(config, "mm_object_tower"):
+            self.object_tower = build_object_tower(config)
 
     def get_vision_tower(self):
         vision_tower = getattr(self, 'vision_tower', None)
@@ -51,10 +54,18 @@ class LlavaMetaModel:
     def get_prompt_tower(self):
         prompt_tower = getattr(self, 'prompt_tower', None)
         return prompt_tower
+    
+    def get_object_tower(self):
+        object_tower = getattr(self, 'object_tower', None)
+        return object_tower
 
     def initialize_prompt_modules(self, model_args):
         if self.get_prompt_tower() is None:
             self.prompt_tower = build_prompt_tower(model_args)
+    
+    def initialize_object_modules(self, model_args):
+        if self.get_object_tower() is None:
+            self.object_tower = build_object_tower(model_args)
         
     def initialize_vision_modules(self, model_args, fsdp=None):
         vision_tower = model_args.vision_tower
@@ -149,16 +160,21 @@ class LlavaMetaForCausalLM(ABC):
     
     def get_prompt_tower(self):
         return self.get_model().get_prompt_tower()
+    
+    def get_object_tower(self):
+        return self.get_model().get_object_tower()
 
-    def encode_images(self, images, inputs_embeds, concat_prompt_images):
+    def encode_images(self, images, inputs_embeds, concat_prompt_images, concat_object_images, object_text_ids):
+        object_queries = self.get_model().get_object_tower()(concat_object_images, object_text_ids)
         image_features = self.get_model().get_vision_tower()(images)
-        image_features = self.get_model().get_prompt_tower()(concat_prompt_images, inputs_embeds, image_features)
+        image_features = self.get_model().get_prompt_tower()(concat_prompt_images, inputs_embeds, image_features, object_queries)
         image_features = self.get_model().mm_projector(image_features)
         return image_features
 
     def prepare_inputs_labels_for_multimodal(
         self, input_ids, position_ids, attention_mask, past_key_values, labels,
         images, image_sizes=None, question_ids=None, prompt_images=None,
+        object_images=None, object_text_ids=None,
     ):
         vision_tower = self.get_vision_tower()
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
@@ -174,7 +190,12 @@ class LlavaMetaForCausalLM(ABC):
                 B, L, C = inputs_embeds.shape
                 inputs_embeds = inputs_embeds.unsqueeze(1).repeat(1, num, 1, 1).reshape(-1, L, C)
             concat_prompt_images = torch.cat([image for image in prompt_images], dim=0)
-            image_features = self.encode_images(concat_images, inputs_embeds, concat_prompt_images)
+            concat_object_images = torch.cat([image for image in object_images], dim=0)
+            
+            image_features = self.encode_images(concat_images, inputs_embeds, 
+                                                concat_prompt_images, concat_object_images,
+                                                object_text_ids)
+            
             split_sizes = [image.shape[0] for image in images]
             image_features = torch.split(image_features, split_sizes, dim=0)
             mm_patch_merge_type = getattr(self.config, 'mm_patch_merge_type', 'flat')

@@ -14,6 +14,7 @@ from llava.train.train import CLIP_PATH
 from PIL import Image
 import math
 
+TEXT = "All objects."
 
 def split_list(lst, n):
     """Split a list into n (roughly) equal-sized chunks"""
@@ -31,7 +32,7 @@ def eval_model(args):
     disable_torch_init()
     model_path = os.path.expanduser(args.model_path)
     model_name = get_model_name_from_path(model_path)
-    tokenizer, model, image_processor, context_len, prompt_image_processor = load_pretrained_model(model_path, args.model_base, model_name)
+    tokenizer, model, image_processor, context_len, prompt_image_processor, object_processor = load_pretrained_model(model_path, args.model_base, model_name)
     clip_tokenizer = transformers.AutoTokenizer.from_pretrained(CLIP_PATH)
     if "lingoqa" in args.question_file.lower():
         with open(args.question_file, 'r', encoding='utf-8') as file:  
@@ -61,6 +62,8 @@ def eval_model(args):
                         max_length=20,
                         truncation=True).input_ids
         
+        object_text_ids = object_processor(text=TEXT, return_tensors="pt").data['input_ids'][0].unsqueeze(0).cuda()
+        
         if model.config.mm_use_im_start_end:
             qs = DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN + '\n' + qs
         else:
@@ -78,6 +81,8 @@ def eval_model(args):
             images.append(Image.open(os.path.join(args.image_folder, img_path)).convert('RGB'))
         image_tensor = process_images(images, image_processor, model.config)
         prompt_images = process_images(images, prompt_image_processor, model.config)
+        object_images = process_images(images, object_processor.image_processor, model.config)
+        
         with torch.inference_mode():
             output_ids = model.generate(
                 input_ids,
@@ -91,7 +96,9 @@ def eval_model(args):
                 max_new_tokens=1024,
                 use_cache=True,
                 question_ids=question_ids.cuda(),
-                prompt_images=prompt_images.unsqueeze(0).half().cuda())
+                prompt_images=prompt_images.unsqueeze(0).half().cuda(),
+                object_images=object_images.unsqueeze(0).half().cuda(),
+                object_text_ids=object_text_ids)
 
         outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
 

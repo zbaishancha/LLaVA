@@ -160,12 +160,14 @@ class DinoVisionTower(BaseVisionTower):
         
         self.prompt_module = CrossModalAttention(self.vision_tower_name)
         self.text_projection = nn.Linear(4096, 1024)
+        self.query_projection = nn.Linear(256, 1024)
+        self.query_projection.requires_grad_(True)
         self.text_projection.requires_grad_(True)
         self.prompt_module.requires_grad_(True)
         self.is_loaded = True
-        if model_path is not None and os.path.exists(os.path.join(model_path, "model-00003-of-00003.safetensors")):
+        if model_path is not None and os.path.exists(os.path.join(model_path, "model-00003-of-00004.safetensors")):
             from safetensors.torch import load_file
-            state_dict = load_file(os.path.join(model_path, "model-00003-of-00003.safetensors"))
+            state_dict = load_file(os.path.join(model_path, "model-00003-of-00004.safetensors"))
             state_dict_real = {
                 k.replace('model.prompt_tower.', ''): v
                 for k, v in state_dict.items()
@@ -220,6 +222,7 @@ class DinoVisionTower(BaseVisionTower):
 
     def _forward(self, images):
         # logger.warning(f"images shape: {images.shape}")
+        self.vision_tower.eval()
         with torch.set_grad_enabled(self.unfreeze_mm_vision_tower):
             image_forward_outs = self.vision_tower.forward(images.to(device=self.device, dtype=self.dtype))
             # logger.warning(f"image_forward_outs shape: {image_forward_outs['last_hidden_state'].shape}")
@@ -229,10 +232,11 @@ class DinoVisionTower(BaseVisionTower):
             # logger.warning(f"interp_features shape: {interp_features.shape}")
             return interp_features
     
-    def forward(self, images, input_embeds, image_features):
+    def forward(self, images, input_embeds, image_features, object_queries):
         prompt_image_features = self._forward(images)
         text_embedding = self.text_projection(input_embeds)
-        prompt_features = torch.cat([image_features, prompt_image_features, text_embedding], dim=1)
+        queries_embedding = self.query_projection(object_queries)
+        prompt_features = torch.cat([image_features, prompt_image_features, text_embedding, queries_embedding], dim=1)
         image_features = image_features + self.prompt_module(image_features, prompt_features)
         return image_features
 

@@ -165,6 +165,13 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         if device_map != 'auto':
             prompt_tower.to(device=device_map, dtype=torch.float16)
         prompt_image_processor = prompt_tower.image_processor
+
+        object_tower = model.get_object_tower()
+        if not object_tower.is_loaded and object_tower is not None:
+            object_tower.load_model(device_map=device_map, model_path=model_path)
+        if device_map != 'auto':
+            object_tower.to(device=device_map, dtype=torch.float16)
+        object_processor = object_tower.image_processor
     
     if hasattr(model.config, "max_sequence_length"):
         context_len = model.config.max_sequence_length
@@ -177,4 +184,4 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
     model.cuda()
     model.requires_grad_(False)
     model = model.to(dtype=torch.float16)
-    return tokenizer, model, image_processor, context_len, prompt_image_processor
+    return tokenizer, model, image_processor, context_len, prompt_image_processor, object_processor

@@ -13,9 +13,10 @@ torchrun --nproc_per_node=8 \
     --deepspeed ./scripts/zero3.json \
     --model_name_or_path /mnt/csi-data-aly/shared/public/haozhou/checkpoints/LLaVA/llava-v1.5-7b \
     --version v1 \
-    --data_path ./playground/data/LingoQA/train.json \
+    --data_path ./playground/data/LingoQA/train_multi.json \
     --vision_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/clip-vit-large-patch14-336 \
     --prompt_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/dinov2-large \
+    --object_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/grounding-dino-base \
     --mm_projector_type mlp2x_gelu \
     --mm_vision_select_layer -2 \
     --mm_use_im_start_end False \
@@ -23,8 +24,8 @@ torchrun --nproc_per_node=8 \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/llava-v1.5-7b-task-img-token-reweight-one-cross \
-    --exp_name finetune_llava_v1.5_7b_lingoqa_img_token_reweight_one_cross \
+    --output_dir ./checkpoints/llava-v1.5-7b-task-pros-of-pro-16query-train-multi-class-embeds \
+    --exp_name finetune_llava_v1.5_7b_lingoqa_prompts_of_prompt_16query_train_multi__class_embeds \
     --num_train_epochs 1 \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 1 \

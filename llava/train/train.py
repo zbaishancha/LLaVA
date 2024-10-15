@@ -38,6 +38,7 @@ from llava import deekeeper
 from PIL import Image
 
 CLIP_PATH = "/mnt/csi-data-aly/shared/public/haozhou/checkpoints/clip-vit-large-patch14-336"
+TEXT = "All objects."
 local_rank = None
 
 
@@ -58,6 +59,7 @@ class ModelArguments:
     tune_mm_mlp_adapter: bool = field(default=False)
     vision_tower: Optional[str] = field(default=None)
     prompt_tower: Optional[str] = field(default=None)
+    object_tower: Optional[str] = field(default=None)
     mm_vision_select_layer: Optional[int] = field(default=-1)   # default to the last layer
     pretrain_mm_mlp_adapter: Optional[str] = field(default=None)
     mm_projector_type: Optional[str] = field(default='linear')
@@ -82,6 +84,7 @@ class DataArguments:
     out_clip_text_ids: bool = True
     max_length: int = 20
     out_prompt_img: bool = True
+    out_object_img: bool = True
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -177,7 +180,7 @@ def get_mm_adapter_state_maybe_zero_3(named_params, keys_to_match):
 def find_all_linear_names(model):
     cls = torch.nn.Linear
     lora_module_names = set()
-    multimodal_keywords = ['mm_projector', 'vision_tower', 'vision_resampler', 'prompt_tower']
+    multimodal_keywords = ['mm_projector', 'vision_tower', 'vision_resampler', 'prompt_tower', 'object_tower']
     for name, module in model.named_modules():
         if any(mm_keyword in name for mm_keyword in multimodal_keywords):
             continue
@@ -710,6 +713,7 @@ class LazySupervisedDataset(Dataset):
         self.crop_ratio = data_args.crop_ratio
         self.out_clip_text_ids = data_args.out_clip_text_ids
         self.out_prompt_img = data_args.out_prompt_img
+        self.out_object_img = data_args.out_object_img
         if data_args.out_clip_text_ids:
             self.clip_tokenizer = transformers.AutoTokenizer.from_pretrained(CLIP_PATH)
             self.max_length = data_args.max_length
@@ -757,6 +761,8 @@ class LazySupervisedDataset(Dataset):
             image_folder = self.data_args.image_folder
             processor = self.data_args.image_processor
             prompt_processor = self.data_args.image_processor_prompt
+            object_processor = self.data_args.image_processor_object
+            
             if isinstance(image_file, list):
                 image = []
                 for img_file in image_file:
@@ -790,10 +796,16 @@ class LazySupervisedDataset(Dataset):
                         return result
                 if isinstance(image, list):
                     prompt_image = [copy.deepcopy(img) for img in image]
+                    object_image = [copy.deepcopy(img) for img in image]
+                    
                     image = [expand2square(img, tuple(int(x*255) for x in processor.image_mean)) for img in image]
                     image = [processor.preprocess(img, return_tensors='pt')['pixel_values'][0] for img in image]
+                    
                     prompt_image = [expand2square(img, tuple(int(x*255) for x in prompt_processor.image_mean)) for img in prompt_image]
                     prompt_image = [prompt_processor.preprocess(img, return_tensors='pt')['pixel_values'][0] for img in prompt_image]
+                    
+                    object_image = [expand2square(img, tuple(int(x*255) for x in prompt_processor.image_mean)) for img in object_image]
+                    object_image = [object_processor(images=img, text=TEXT, return_tensors="pt").data['pixel_values'][0] for img in object_image]
                 else:
                     image = expand2square(image, tuple(int(x*255) for x in processor.image_mean))
                     image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
@@ -826,6 +838,9 @@ class LazySupervisedDataset(Dataset):
             data_dict = preprocess_question(sources, self.tokenizer, data_dict, max_length=self.max_length)
         if self.out_prompt_img:
             data_dict['prompt_image'] = prompt_image
+        if self.out_object_img:
+            data_dict['object_image'] = object_image
+            data_dict['object_text_ids'] = object_processor(text=TEXT, return_tensors="pt").data['input_ids'][0]
         return data_dict
 
 @dataclass
@@ -834,8 +849,8 @@ class DataCollatorForSupervisedDataset(object):
     tokenizer: transformers.PreTrainedTokenizer
     
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
-        input_ids, labels, question_ids = tuple([instance[key] for instance in instances]
-                                  for key in ("input_ids", "labels", "question_ids"))
+        input_ids, labels, question_ids, object_text_ids = tuple([instance[key] for instance in instances]
+                                  for key in ("input_ids", "labels", "question_ids", "object_text_ids"))
         input_ids = torch.nn.utils.rnn.pad_sequence(
             input_ids,
             batch_first=True,
@@ -849,7 +864,8 @@ class DataCollatorForSupervisedDataset(object):
             input_ids=input_ids,
             labels=labels,
             attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
-            question_ids=torch.stack(question_ids, dim=0)
+            question_ids=torch.stack(question_ids, dim=0),
+            object_text_ids=torch.stack(object_text_ids, dim=0),
         )
         if 'image' in instances[0]:
             
@@ -873,6 +889,17 @@ class DataCollatorForSupervisedDataset(object):
                     batch['prompt_images'] = torch.stack(prompt_images)
                 else:
                     batch['prompt_images'] = prompt_images
+        
+        if 'object_image' in instances[0]:
+            object_images = [instance['object_image'] for instance in instances]
+            if isinstance(object_images[0], list):
+                object_images = torch.stack([torch.stack(img, dim=0) for img in object_images], dim = 0)
+                batch['object_images'] = object_images
+            else:
+                if all(x is not None and x.shape == images[0].shape for x in object_images):
+                    batch['object_images'] = torch.stack(object_images)
+                else:
+                    batch['object_images'] = object_images
         
         return batch
 
@@ -1023,6 +1050,15 @@ def train(attn_implementation=None):
         prompt_tower.to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16, device=training_args.device)
         
         data_args.image_processor_prompt = prompt_tower.image_processor
+    
+    if model_args.object_tower is not None:
+        model.get_model().initialize_object_modules(model_args)
+        object_tower = model.get_object_tower()
+        if not object_tower.is_loaded:
+            object_tower.load_model()
+        object_tower.to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16, device=training_args.device)
+        
+        data_args.image_processor_object = object_tower.image_processor
     
     if model_args.vision_tower is not None:
         model.get_model().initialize_vision_modules(
