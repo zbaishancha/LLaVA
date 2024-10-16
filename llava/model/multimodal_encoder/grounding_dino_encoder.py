@@ -79,7 +79,7 @@ class GroundingDinoVisionTower(nn.Module):
         object_queries = pred_queries[torch.arange(bm, device=self.device).unsqueeze(1), topk_indices]
         labels_embed = self.class_embeds(topk_labels)
         object_queries += labels_embed
-        return object_queries
+        return object_queries, outputs.encoder_last_hidden_state_vision
 
     @property
     def dummy_feature(self):

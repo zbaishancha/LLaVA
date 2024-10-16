@@ -159,6 +159,7 @@ class DinoVisionTower(BaseVisionTower):
         self.vision_tower.requires_grad_(self.unfreeze_mm_vision_tower)
         
         self.prompt_module = CrossModalAttention(self.vision_tower_name)
+        self.feature_projection = nn.Linear(256, 1024)
         self.text_projection = nn.Linear(4096, 1024)
         self.query_projection = nn.Linear(256, 1024)
         self.query_projection.requires_grad_(True)
@@ -232,8 +233,11 @@ class DinoVisionTower(BaseVisionTower):
             # logger.warning(f"interp_features shape: {interp_features.shape}")
             return interp_features
     
-    def forward(self, images, input_embeds, image_features, object_queries):
-        prompt_image_features = self._forward(images)
+    def forward(self, images, input_embeds, image_features, object_queries, groud_dino_features=None):
+        if groud_dino_features is not None:
+            prompt_image_features = self.feature_projection(groud_dino_features)
+        else:
+            prompt_image_features = self._forward(images)
         text_embedding = self.text_projection(input_embeds)
         queries_embedding = self.query_projection(object_queries)
         prompt_features = torch.cat([image_features, prompt_image_features, text_embedding, queries_embedding], dim=1)

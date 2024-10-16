@@ -165,9 +165,10 @@ class LlavaMetaForCausalLM(ABC):
         return self.get_model().get_object_tower()
 
     def encode_images(self, images, inputs_embeds, concat_prompt_images, concat_object_images, object_text_ids):
-        object_queries = self.get_model().get_object_tower()(concat_object_images, object_text_ids)
+        object_queries, groud_dino_features = self.get_model().get_object_tower()(concat_object_images, object_text_ids)
         image_features = self.get_model().get_vision_tower()(images)
-        image_features = self.get_model().get_prompt_tower()(concat_prompt_images, inputs_embeds, image_features, object_queries)
+        image_features = self.get_model().get_prompt_tower()(concat_prompt_images, inputs_embeds, 
+                                                                image_features, object_queries, groud_dino_features)
         image_features = self.get_model().mm_projector(image_features)
         return image_features
 

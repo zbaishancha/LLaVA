@@ -24,8 +24,8 @@ torchrun --nproc_per_node=8 \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/llava-v1.5-7b-task-pros-of-pro-16query-train-multi-class-embeds \
-    --exp_name finetune_llava_v1.5_7b_lingoqa_prompts_of_prompt_16query_train_multi__class_embeds \
+    --output_dir ./checkpoints/llava-v1.5-7b-task-pros-of-pro-ground-dino-feature \
+    --exp_name finetune_llava_v1.5_7b_lingoqa_prompts_of_prompt_ground_dino_feature \
     --num_train_epochs 1 \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 1 \
