@@ -6,7 +6,7 @@ import math
 import torch.nn.functional as F
 from safetensors.torch import load_file
 
-from transformers import AutoProcessor, GroundingDinoForObjectDetection, GroundingDinoConfig, GroundingDinoImageProcessor, AutoImageProcessor, Mask2FormerForUniversalSegmentation
+from transformers import AutoImageProcessor, Mask2FormerForUniversalSegmentation, GroundingDinoConfig
 
 # from PIL import Image
 # import requests
@@ -43,7 +43,7 @@ class GroundingDinoVisionTower(nn.Module):
         if self.is_loaded:
             print('{} is already loaded, `load_model` called again, skipping.'.format(self.vision_tower_name))
             return
-        
+        self.vision_tower_name = "/mnt/csi-data-aly/shared/public/haozhou/checkpoints/mask2former-swin-large-cityscapes-semantic"
         # load Mask2Former fine-tuned on Cityscapes semantic segmentation
         self.vision_tower = Mask2FormerForUniversalSegmentation.from_pretrained(self.vision_tower_name)
         self.image_processor = AutoImageProcessor.from_pretrained(self.vision_tower_name)
