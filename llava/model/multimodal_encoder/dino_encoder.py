@@ -165,6 +165,7 @@ class DinoVisionTower(BaseVisionTower):
         self.query_projection.requires_grad_(True)
         self.text_projection.requires_grad_(True)
         self.prompt_module.requires_grad_(True)
+        self.feature_projection.requires_grad_(True)
         self.is_loaded = True
         if model_path is not None and os.path.exists(os.path.join(model_path, "model-00003-of-00004.safetensors")):
             from safetensors.torch import load_file
