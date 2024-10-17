@@ -24,8 +24,8 @@ torchrun --nproc_per_node=8 \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/llava-v1.5-7b-task-pros-of-pro-mask2former \
-    --exp_name finetune_llava_v1.5_7b_lingoqa_prompts_of_prompt_mask2former \
+    --output_dir ./checkpoints/llava-v1.5-7b-task-pros-of-pro-series-connection-cross \
+    --exp_name finetune_llava_v1.5_7b_lingoqa_prompts_of_prompt_series_connection_cross \
     --num_train_epochs 1 \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 1 \
@@ -45,7 +45,8 @@ torchrun --nproc_per_node=8 \
     --dataloader_num_workers 4 \
     --lazy_preprocess True \
     --report_to tensorboard \
-    --crop False
+    --crop False \
+    --feature_fusion_strategy series-connection-cross
 
 # multi nodes
 # --nnodes=${WORLD_SIZE} \

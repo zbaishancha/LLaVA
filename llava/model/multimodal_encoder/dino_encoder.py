@@ -128,7 +128,7 @@ class DinoVisionTower(BaseVisionTower):
         else:
             self.cfg_only = Dinov2Config.from_pretrained(self.vision_tower_name)
 
-    def load_model(self, device_map=None, model_path=None):
+    def load_model(self, device_map=None, model_path=None, feature_fusion_strategy='one-cross'):
 
         self.vision_tower = Dinov2Model.from_pretrained(self.vision_tower_name)
         """ValueError: Dinov2Model does not support `device_map='auto'`. To implement support, the model class needs to implement the `_no_split_modules` attribute."""
@@ -157,13 +157,33 @@ class DinoVisionTower(BaseVisionTower):
         #print(self._hidden_size, self._patch_size)
 
         self.vision_tower.requires_grad_(self.unfreeze_mm_vision_tower)
-        
-        self.prompt_module = CrossModalAttention(self.vision_tower_name)
         self.text_projection = nn.Linear(4096, 1024)
         self.query_projection = nn.Linear(256, 1024)
         self.query_projection.requires_grad_(True)
         self.text_projection.requires_grad_(True)
-        self.prompt_module.requires_grad_(True)
+        
+        self.feature_fusion_strategy = feature_fusion_strategy
+        
+        if self.feature_fusion_strategy == 'cat':
+            self.prompt_module = nn.Identity()
+
+        elif self.feature_fusion_strategy == 'series-connection-cross':
+            self.prompt_module = nn.ModuleList([CrossModalAttention(self.vision_tower_name),
+                                               CrossModalAttention(self.vision_tower_name),
+                                               CrossModalAttention(self.vision_tower_name)])
+            self.prompt_module.requires_grad_(True)
+        elif self.feature_fusion_strategy == 'parallel-connection-cross':
+            self.prompt_module_text = CrossModalAttention(self.vision_tower_name)
+            self.prompt_module_prompt = CrossModalAttention(self.vision_tower_name)
+            self.prompt_module_object = CrossModalAttention(self.vision_tower_name)
+            self.prompt_module_text.requires_grad_(True)
+            self.prompt_module_prompt.requires_grad_(True)
+            self.prompt_module_object.requires_grad_(True)
+        elif self.feature_fusion_strategy == 'one-cross':
+            self.prompt_module = CrossModalAttention(self.vision_tower_name)
+            self.prompt_module.requires_grad_(True)
+        
+        
         self.is_loaded = True
         if model_path is not None and os.path.exists(os.path.join(model_path, "model-00003-of-00004.safetensors")):
             from safetensors.torch import load_file
@@ -233,11 +253,29 @@ class DinoVisionTower(BaseVisionTower):
             return interp_features
     
     def forward(self, images, input_embeds, image_features, object_queries):
-        prompt_image_features = self._forward(images)
-        text_embedding = self.text_projection(input_embeds)
-        queries_embedding = self.query_projection(object_queries)
-        prompt_features = torch.cat([image_features, prompt_image_features, text_embedding, queries_embedding], dim=1)
-        image_features = image_features + self.prompt_module(image_features, prompt_features)
+        prompt_image_features = self._forward(images) # B, N, D
+        text_embedding = self.text_projection(input_embeds) # B, N, D
+        queries_embedding = self.query_projection(object_queries) # B, N, D
+        
+        if self.feature_fusion_strategy == 'one-cross':
+            prompt_features = torch.cat([image_features, prompt_image_features, text_embedding, queries_embedding], dim=1)
+            image_features = image_features + self.prompt_module(image_features, prompt_features)
+        
+        elif self.feature_fusion_strategy == 'cat':
+            prompt_features = torch.cat([image_features, prompt_image_features, text_embedding, queries_embedding], dim=1)
+            image_features = self.prompt_module(prompt_features)
+        
+        elif self.feature_fusion_strategy == 'series-connection-cross':
+            feature_list = [prompt_image_features, queries_embedding, text_embedding]
+            for fusion_module, feature in zip(self.prompt_module, feature_list):
+                image_features = image_features + fusion_module(image_features, torch.cat([image_features, feature], dim=1))
+        
+        elif self.feature_fusion_strategy == 'parallel-connection-cross':
+            image_features = image_features + \
+                                self.prompt_module_object(image_features, torch.cat([image_features, queries_embedding], dim=1)) + \
+                                    self.prompt_module_prompt(image_features, torch.cat([image_features, prompt_image_features], dim=1)) + \
+                                        self.prompt_module_text(image_features, torch.cat([image_features, text_embedding], dim=1))
+        
         return image_features
 
 

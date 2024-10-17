@@ -69,6 +69,7 @@ class ModelArguments:
     mm_vision_select_feature: Optional[str] = field(default="patch")
     top_k_ratio: float = 0.75
     temperature: float = 0.05
+    feature_fusion_strategy: Optional[str] = field(default='one-cross')
 
 
 @dataclass
@@ -1046,7 +1047,7 @@ def train(attn_implementation=None):
         model.get_model().initialize_prompt_modules(model_args)
         prompt_tower = model.get_prompt_tower()
         if not prompt_tower.is_loaded:
-            prompt_tower.load_model()
+            prompt_tower.load_model(feature_fusion_strategy=model_args.feature_fusion_strategy)
         prompt_tower.to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16, device=training_args.device)
         
         data_args.image_processor_prompt = prompt_tower.image_processor

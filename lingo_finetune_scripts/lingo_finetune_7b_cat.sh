@@ -24,8 +24,8 @@ torchrun --nproc_per_node=8 \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/llava-v1.5-7b-task-pros-of-pro-mask2former \
-    --exp_name finetune_llava_v1.5_7b_lingoqa_prompts_of_prompt_mask2former \
+    --output_dir ./checkpoints/llava-v1.5-7b-task-pros-of-pro-cat-all-feature \
+    --exp_name finetune_llava_v1.5_7b_lingoqa_prompts_of_prompt_cat_all_feature \
     --num_train_epochs 1 \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 1 \
@@ -40,12 +40,13 @@ torchrun --nproc_per_node=8 \
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
     --tf32 True \
-    --model_max_length 3072 \
+    --model_max_length 6144 \
     --gradient_checkpointing True \
     --dataloader_num_workers 4 \
     --lazy_preprocess True \
     --report_to tensorboard \
-    --crop False
+    --crop False \
+    --feature_fusion_strategy cat
 
 # multi nodes
 # --nnodes=${WORLD_SIZE} \
