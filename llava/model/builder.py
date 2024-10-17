@@ -161,7 +161,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         
         prompt_tower = model.get_prompt_tower()
         if not prompt_tower.is_loaded and prompt_tower is not None:
-            prompt_tower.load_model(device_map=device_map, model_path=model_path)
+            prompt_tower.load_model(device_map=device_map, model_path=model_path, feature_fusion_strategy='cat')
         if device_map != 'auto':
             prompt_tower.to(device=device_map, dtype=torch.float16)
         prompt_image_processor = prompt_tower.image_processor
