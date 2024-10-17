@@ -62,8 +62,6 @@ def eval_model(args):
                         max_length=20,
                         truncation=True).input_ids
         
-        object_text_ids = object_processor(text=TEXT, return_tensors="pt").data['input_ids'][0].unsqueeze(0).cuda()
-        
         if model.config.mm_use_im_start_end:
             qs = DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN + '\n' + qs
         else:
@@ -81,7 +79,7 @@ def eval_model(args):
             images.append(Image.open(os.path.join(args.image_folder, img_path)).convert('RGB'))
         image_tensor = process_images(images, image_processor, model.config)
         prompt_images = process_images(images, prompt_image_processor, model.config)
-        object_images = process_images(images, object_processor.image_processor, model.config)
+        object_images = process_images(images, object_processor, model.config)
         
         with torch.inference_mode():
             output_ids = model.generate(
@@ -97,8 +95,7 @@ def eval_model(args):
                 use_cache=True,
                 question_ids=question_ids.cuda(),
                 prompt_images=prompt_images.unsqueeze(0).half().cuda(),
-                object_images=object_images.unsqueeze(0).half().cuda(),
-                object_text_ids=object_text_ids)
+                object_images=object_images.unsqueeze(0).half().cuda())
 
         outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
 
