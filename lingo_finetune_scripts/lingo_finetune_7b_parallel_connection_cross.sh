@@ -16,7 +16,7 @@ torchrun --nproc_per_node=8 \
     --data_path ./playground/data/LingoQA/train_multi.json \
     --vision_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/clip-vit-large-patch14-336 \
     --prompt_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/dinov2-large \
-    --object_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/grounding-dino-base \
+    --object_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/mask2former-swin-large-cityscapes-semantic \
     --mm_projector_type mlp2x_gelu \
     --mm_vision_select_layer -2 \
     --mm_use_im_start_end False \

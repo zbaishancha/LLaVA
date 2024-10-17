@@ -4,6 +4,7 @@ from .dino_encoder import DinoVisionTower
 from .siglip_encoder import SiglipVisionTower
 from .grounding_dino_encoder import GroundingDinoVisionTower
 from .sam import SAMVisionTower
+from .mask2former import Mask2FormerVisionTower
 
 def build_vision_tower(vision_tower_cfg, **kwargs):
     vision_tower = getattr(vision_tower_cfg, 'mm_vision_tower', getattr(vision_tower_cfg, 'vision_tower', None))
@@ -41,6 +42,9 @@ def build_object_tower(object_tower_cfg, **kwargs):
     is_absolute_path_exists = os.path.exists(object_tower)
     
     if is_absolute_path_exists:
-        return GroundingDinoVisionTower(object_tower, args=object_tower_cfg, **kwargs)
-    
+        if 'dino' in object_tower:
+            return GroundingDinoVisionTower(object_tower, args=object_tower_cfg, **kwargs)
+        elif 'mask2former' in object_tower:
+            return Mask2FormerVisionTower(object_tower, args=object_tower_cfg, **kwargs)
+        
     raise ValueError(f'Unknown vision tower: {object_tower_cfg}')
