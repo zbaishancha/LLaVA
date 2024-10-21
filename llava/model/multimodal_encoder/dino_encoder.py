@@ -37,6 +37,67 @@ def extract_res_interp(model_name):
 
     return base_model_name, res, interp
 
+
+class SelfAttention(nn.Module):
+    """
+    A vanilla multi-head self-attention layer with a projection at the end.
+    It is possible to use torch.nn.MultiheadAttention here.
+    """
+
+    def __init__(self, config):
+        super().__init__()
+        
+        self.n_embd = 1024
+        self.n_head = 16
+        self.head_dim = self.n_embd // self.num_heads
+        self.dropout = 0.1
+        
+        # key, query, value projections for all heads, but in a batch
+        self.c_attn = nn.Linear(self.n_embd, 3 * self.n_embd)
+        
+        # output projection
+        self.c_proj = nn.Linear(self.n_embd, self.n_embd)
+        
+        # regularization
+        self.attn_dropout = nn.Dropout(0.1)
+        self.resid_dropout = nn.Dropout(0.1)
+        self.dropout = 0.1
+        
+        # support is only in PyTorch >= 2.0
+        self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
+
+    def forward(self, x):
+        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
+        C = int(C)
+        T = int(T)
+        # calculate query, key, values for all heads in batch and move head forward to be the batch dim
+        q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
+        if self.flash:
+            k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        else:
+            k = k.view(B, T, self.n_head, C // self.n_head).permute((0, 2, 3, 1)) # (B, nh, hs, T)
+        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+
+        if self.flash:
+            # efficient attention using Flash Attention CUDA kernels
+            # Full attention set is_causal as False
+            y = torch.nn.functional.scaled_dot_product_attention(q, k, v, 
+                                                                 attn_mask=None, 
+                                                                 dropout_p=self.dropout if self.training else 0., 
+                                                                 is_causal=False)
+        else:
+            # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
+            att = (q @ k) * (1.0 / math.sqrt(q.size(-1)))
+            att = F.softmax(att, dim=-1)
+            att = self.attn_dropout(att)
+            y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+        y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
+        # output projection
+        y = self.resid_dropout(self.c_proj(y))
+        return y
+
+
 class CrossModalAttention(nn.Module):
     def __init__(self, config):
         super(CrossModalAttention, self).__init__()
@@ -258,7 +319,8 @@ class DinoVisionTower(BaseVisionTower):
         queries_embedding = self.query_projection(object_queries) # B, N, D
         
         if self.feature_fusion_strategy == 'one-cross':
-            prompt_features = torch.cat([image_features, prompt_image_features, text_embedding, queries_embedding], dim=1)
+            prompt_features = torch.cat([prompt_image_features, text_embedding, queries_embedding], dim=1)
+            image_features = image_features + s
             image_features = image_features + self.prompt_module(image_features, prompt_features)
         
         elif self.feature_fusion_strategy == 'cat':
