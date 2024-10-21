@@ -33,6 +33,9 @@ class CLIPVisionTower(nn.Module):
         self.vision_tower = CLIPVisionModel.from_pretrained(self.vision_tower_name, device_map=device_map)
         self.vision_tower.requires_grad_(False)
 
+        self.text_model = CLIPTextModel.from_pretrained(self.vision_tower_name, device_map=device_map)
+        self.text_model.requires_grad_(False)
+        
         self.is_loaded = True
 
     def feature_select(self, image_forward_outs):
@@ -46,7 +49,7 @@ class CLIPVisionTower(nn.Module):
         return image_features
 
     @torch.no_grad()
-    def forward(self, images):
+    def forward(self, images, input_ids):
         if type(images) is list:
             image_features = []
             for image in images:
@@ -56,8 +59,9 @@ class CLIPVisionTower(nn.Module):
         else:
             image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=True)
             image_features = self.feature_select(image_forward_outs).to(images.dtype)
-
-        return image_features
+        self.text_model.eval()
+        outputs = self.text_model(input_ids)
+        return image_features, outputs.last_hidden_state
 
     @property
     def dummy_feature(self):

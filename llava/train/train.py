@@ -835,7 +835,7 @@ class LazySupervisedDataset(Dataset):
             crop_size = self.data_args.image_processor.crop_size
             data_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
         if self.out_clip_text_ids:
-            data_dict = preprocess_question(sources, self.tokenizer, data_dict, max_length=self.max_length)
+            data_dict = preprocess_question(sources, self.clip_tokenizer, data_dict, max_length=self.max_length)
         if self.out_prompt_img:
             data_dict['prompt_image'] = prompt_image
         if self.out_object_img:

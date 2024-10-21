@@ -218,7 +218,7 @@ class DinoVisionTower(BaseVisionTower):
         #print(self._hidden_size, self._patch_size)
 
         self.vision_tower.requires_grad_(self.unfreeze_mm_vision_tower)
-        self.text_projection = nn.Linear(4096, 1024)
+        self.text_projection = nn.Linear(768, 1024)
         self.query_projection = nn.Linear(256, 1024)
         self.query_projection.requires_grad_(True)
         self.text_projection.requires_grad_(True)
@@ -319,8 +319,7 @@ class DinoVisionTower(BaseVisionTower):
         queries_embedding = self.query_projection(object_queries) # B, N, D
         
         if self.feature_fusion_strategy == 'one-cross':
-            prompt_features = torch.cat([prompt_image_features, text_embedding, queries_embedding], dim=1)
-            image_features = image_features + s
+            prompt_features = torch.cat([image_features, prompt_image_features, text_embedding, queries_embedding], dim=1)
             image_features = image_features + self.prompt_module(image_features, prompt_features)
         
         elif self.feature_fusion_strategy == 'cat':

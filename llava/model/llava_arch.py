@@ -164,9 +164,9 @@ class LlavaMetaForCausalLM(ABC):
     def get_object_tower(self):
         return self.get_model().get_object_tower()
 
-    def encode_images(self, images, inputs_embeds, concat_prompt_images, concat_object_images):
+    def encode_images(self, images, question_ids, concat_prompt_images, concat_object_images):
         object_queries = self.get_model().get_object_tower()(concat_object_images)
-        image_features = self.get_model().get_vision_tower()(images)
+        image_features, inputs_embeds = self.get_model().get_vision_tower()(images, question_ids)
         image_features = self.get_model().get_prompt_tower()(concat_prompt_images, inputs_embeds, image_features, object_queries)
         image_features = self.get_model().mm_projector(image_features)
         return image_features
@@ -184,15 +184,15 @@ class LlavaMetaForCausalLM(ABC):
             if type(images) is list:
                 images = [x.unsqueeze(0) if x.ndim == 3 else x for x in images]
             concat_images = torch.cat([image for image in images], dim=0)
-            inputs_embeds = self.get_model().embed_tokens(question_ids)
-            if concat_images.size(0) != inputs_embeds.size(0): # multi imgs
-                num = concat_images.size(0) // inputs_embeds.size(0)
-                B, L, C = inputs_embeds.shape
-                inputs_embeds = inputs_embeds.unsqueeze(1).repeat(1, num, 1, 1).reshape(-1, L, C)
+            # inputs_embeds = self.get_model().embed_tokens(question_ids)
+            if concat_images.size(0) != question_ids.size(0): # multi imgs
+                num = concat_images.size(0) // question_ids.size(0)
+                B, L = question_ids.shape
+                question_ids = question_ids.unsqueeze(1).repeat(1, num, 1).reshape(-1, L)
             concat_prompt_images = torch.cat([image for image in prompt_images], dim=0)
             concat_object_images = torch.cat([image for image in object_images], dim=0)
             
-            image_features = self.encode_images(concat_images, inputs_embeds, 
+            image_features = self.encode_images(concat_images, question_ids, 
                                                 concat_prompt_images, concat_object_images)
             
             split_sizes = [image.shape[0] for image in images]
