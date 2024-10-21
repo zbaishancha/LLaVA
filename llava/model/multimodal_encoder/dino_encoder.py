@@ -319,8 +319,7 @@ class DinoVisionTower(BaseVisionTower):
         queries_embedding = self.query_projection(object_queries) # B, N, D
         
         if self.feature_fusion_strategy == 'one-cross':
-            prompt_features = torch.cat([prompt_image_features, text_embedding, queries_embedding], dim=1)
-            image_features = image_features + s
+            prompt_features = torch.cat([image_features, prompt_image_features, text_embedding, queries_embedding], dim=1)
             image_features = image_features + self.prompt_module(image_features, prompt_features)
         
         elif self.feature_fusion_strategy == 'cat':
