@@ -49,7 +49,8 @@ class SelfAttention(nn.Module):
         
         self.n_embd = 1024
         self.n_head = 16
-        self.head_dim = self.n_embd // self.num_heads
+        self.head_dim = self.n_embd // self.n_head
+        assert self.n_embd % self.n_head == 0
         self.dropout = 0.1
         
         # key, query, value projections for all heads, but in a batch
@@ -241,8 +242,10 @@ class DinoVisionTower(BaseVisionTower):
             self.prompt_module_prompt.requires_grad_(True)
             self.prompt_module_object.requires_grad_(True)
         elif self.feature_fusion_strategy == 'one-cross':
+            self.global_attn = SelfAttention(self.vision_tower_name)
             self.prompt_module = CrossModalAttention(self.vision_tower_name)
             self.prompt_module.requires_grad_(True)
+            self.global_attn.requires_grad_(True)
         
         
         self.is_loaded = True
@@ -320,7 +323,7 @@ class DinoVisionTower(BaseVisionTower):
         
         if self.feature_fusion_strategy == 'one-cross':
             prompt_features = torch.cat([prompt_image_features, text_embedding, queries_embedding], dim=1)
-            image_features = image_features + s
+            image_features = image_features + self.global_attn(image_features)
             image_features = image_features + self.prompt_module(image_features, prompt_features)
         
         elif self.feature_fusion_strategy == 'cat':
