@@ -56,7 +56,7 @@ def eval_model(args):
         qs = line["text"]
         cur_prompt = qs
         
-        question_ids = tokenizer(qs,
+        question_ids = clip_tokenizer(qs,
                         return_tensors="pt",
                         padding='max_length',
                         max_length=20,
