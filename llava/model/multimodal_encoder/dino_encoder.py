@@ -218,10 +218,10 @@ class DinoVisionTower(BaseVisionTower):
         #print(self._hidden_size, self._patch_size)
 
         self.vision_tower.requires_grad_(self.unfreeze_mm_vision_tower)
-        self.text_projection = nn.Linear(4096, 1024)
-        self.query_projection = nn.Linear(256, 1024)
-        self.query_projection.requires_grad_(True)
-        self.text_projection.requires_grad_(True)
+        # self.text_projection = nn.Linear(4096, 1024)
+        # self.query_projection = nn.Linear(256, 1024)
+        # self.query_projection.requires_grad_(True)
+        # self.text_projection.requires_grad_(True)
         
         self.feature_fusion_strategy = feature_fusion_strategy
         
@@ -313,13 +313,14 @@ class DinoVisionTower(BaseVisionTower):
             # logger.warning(f"interp_features shape: {interp_features.shape}")
             return interp_features
     
-    def forward(self, images, input_embeds, image_features, object_queries):
+    def forward(self, images, input_embeds=None, image_features=None, object_queries=None):
         prompt_image_features = self._forward(images) # B, N, D
-        text_embedding = self.text_projection(input_embeds) # B, N, D
-        queries_embedding = self.query_projection(object_queries) # B, N, D
+        # text_embedding = self.text_projection(input_embeds) # B, N, D
+        # queries_embedding = self.query_projection(object_queries) # B, N, D
         
         if self.feature_fusion_strategy == 'one-cross':
-            prompt_features = torch.cat([image_features, prompt_image_features, text_embedding, queries_embedding], dim=1)
+            # prompt_features = torch.cat([image_features, prompt_image_features, text_embedding, queries_embedding], dim=1)
+            prompt_features = torch.cat([image_features, prompt_image_features], dim=1)
             image_features = image_features + self.prompt_module(image_features, prompt_features)
         
         elif self.feature_fusion_strategy == 'cat':

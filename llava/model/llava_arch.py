@@ -164,10 +164,18 @@ class LlavaMetaForCausalLM(ABC):
     def get_object_tower(self):
         return self.get_model().get_object_tower()
 
-    def encode_images(self, images, inputs_embeds, concat_prompt_images, concat_object_images):
-        object_queries = self.get_model().get_object_tower()(concat_object_images)
+    def encode_images(self, images, inputs_embeds=None, concat_prompt_images=None, concat_object_images=None):
+        if self.get_model().get_object_tower() is not None:
+            object_queries = self.get_model().get_object_tower()(concat_object_images)
+        else:
+            object_queries = None
+        
         image_features = self.get_model().get_vision_tower()(images)
-        image_features = self.get_model().get_prompt_tower()(concat_prompt_images, inputs_embeds, image_features, object_queries)
+        
+        image_features = self.get_model().get_prompt_tower()(concat_prompt_images, 
+                                                             input_embeds=None, 
+                                                             image_features=image_features, 
+                                                             object_queries=object_queries)
         image_features = self.get_model().mm_projector(image_features)
         return image_features
 
@@ -190,10 +198,10 @@ class LlavaMetaForCausalLM(ABC):
                 B, L, C = inputs_embeds.shape
                 inputs_embeds = inputs_embeds.unsqueeze(1).repeat(1, num, 1, 1).reshape(-1, L, C)
             concat_prompt_images = torch.cat([image for image in prompt_images], dim=0)
-            concat_object_images = torch.cat([image for image in object_images], dim=0)
+            # concat_object_images = torch.cat([image for image in object_images], dim=0)
             
             image_features = self.encode_images(concat_images, inputs_embeds, 
-                                                concat_prompt_images, concat_object_images)
+                                                concat_prompt_images, concat_object_images=None)
             
             split_sizes = [image.shape[0] for image in images]
             image_features = torch.split(image_features, split_sizes, dim=0)

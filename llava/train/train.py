@@ -761,7 +761,7 @@ class LazySupervisedDataset(Dataset):
             image_folder = self.data_args.image_folder
             processor = self.data_args.image_processor
             prompt_processor = self.data_args.image_processor_prompt
-            object_processor = self.data_args.image_processor_object
+            # object_processor = self.data_args.image_processor_object
             
             if isinstance(image_file, list):
                 image = []
@@ -796,7 +796,7 @@ class LazySupervisedDataset(Dataset):
                         return result
                 if isinstance(image, list):
                     prompt_image = [copy.deepcopy(img) for img in image]
-                    object_image = [copy.deepcopy(img) for img in image]
+                    # object_image = [copy.deepcopy(img) for img in image]
                     
                     image = [expand2square(img, tuple(int(x*255) for x in processor.image_mean)) for img in image]
                     image = [processor.preprocess(img, return_tensors='pt')['pixel_values'][0] for img in image]
@@ -804,8 +804,8 @@ class LazySupervisedDataset(Dataset):
                     prompt_image = [expand2square(img, tuple(int(x*255) for x in prompt_processor.image_mean)) for img in prompt_image]
                     prompt_image = [prompt_processor.preprocess(img, return_tensors='pt')['pixel_values'][0] for img in prompt_image]
                     
-                    object_image = [expand2square(img, tuple(int(x*255) for x in prompt_processor.image_mean)) for img in object_image]
-                    object_image = [object_processor.preprocess(img, return_tensors='pt')['pixel_values'][0] for img in object_image]
+                    # object_image = [expand2square(img, tuple(int(x*255) for x in prompt_processor.image_mean)) for img in object_image]
+                    # object_image = [object_processor.preprocess(img, return_tensors='pt')['pixel_values'][0] for img in object_image]
                 else:
                     image = expand2square(image, tuple(int(x*255) for x in processor.image_mean))
                     image = processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
@@ -838,8 +838,8 @@ class LazySupervisedDataset(Dataset):
             data_dict = preprocess_question(sources, self.tokenizer, data_dict, max_length=self.max_length)
         if self.out_prompt_img:
             data_dict['prompt_image'] = prompt_image
-        if self.out_object_img:
-            data_dict['object_image'] = object_image
+        # if self.out_object_img:
+        #     data_dict['object_image'] = object_image
         return data_dict
 
 @dataclass
