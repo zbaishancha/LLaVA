@@ -32,7 +32,7 @@ def build_prompt_tower(prompt_tower_cfg, **kwargs):
         if 'dinov2' in prompt_tower:
             return DinoVisionTower(prompt_tower, args=prompt_tower_cfg, **kwargs)
         elif 'sam' in prompt_tower:
-            return SAMVisionTower(prompt_tower)
+            return SAMVisionTower(prompt_tower, args=prompt_tower_cfg, **kwargs)
 
     raise ValueError(f'Unknown vision tower: {prompt_tower_cfg}')
 

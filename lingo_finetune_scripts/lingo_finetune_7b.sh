@@ -15,7 +15,7 @@ torchrun --nproc_per_node=8 \
     --version v1 \
     --data_path ./playground/data/LingoQA/train_multi.json \
     --vision_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/clip-vit-large-patch14-336 \
-    --prompt_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/dinov2-large \
+    --prompt_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/sam \
     --object_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/mask2former-swin-large-cityscapes-semantic \
     --mm_projector_type mlp2x_gelu \
     --mm_vision_select_layer -2 \
@@ -24,10 +24,10 @@ torchrun --nproc_per_node=8 \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/llava-v1.5-7b-task-pros-of-pro-mask2former-no-class \
-    --exp_name finetune_llava_v1.5_7b_lingoqa_prompts_of_prompt_mask2former_no_class \
+    --output_dir ./checkpoints/llava-v1.5-7b-task-pros-of-pro-mask2former-sam \
+    --exp_name finetune_llava_v1.5_7b_lingoqa_prompts_of_prompt_mask2former_sam \
     --num_train_epochs 1 \
-    --per_device_train_batch_size 4 \
+    --per_device_train_batch_size 2 \
     --per_device_eval_batch_size 1 \
     --gradient_accumulation_steps 1 \
     --evaluation_strategy "no" \
