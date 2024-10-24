@@ -4,6 +4,7 @@ import os
 import json
 import math
 import torch.nn.functional as F
+from einops import rearrange 
 
 from transformers import AutoImageProcessor, Mask2FormerForUniversalSegmentation, Mask2FormerConfig
 
@@ -55,8 +56,22 @@ class Mask2FormerVisionTower(nn.Module):
         
         # model predicts class_queries_logits of shape `(batch_size, num_queries)`
         class_queries_logits = outputs.class_queries_logits
+        masks_queries_logits = outputs.masks_queries_logits
         mask_queries = outputs.transformer_decoder_last_hidden_state
+        
+        masks_queries_logits = torch.nn.functional.interpolate(
+            masks_queries_logits.float(), size=(24, 24), mode="bilinear", align_corners=False
+        ).to(dtype=self.dtype)
         masks_classes = class_queries_logits.softmax(dim=-1)[..., :-1]
+        masks_probs = masks_queries_logits.sigmoid()  # [batch_size, num_queries, height, width]
+        
+        # Semantic segmentation logits of shape (batch_size, num_classes, height, width)
+        segmentation = torch.einsum("bqc, bqhw -> bchw", masks_classes, masks_probs)
+        segmentation_probs = segmentation.permute(0, 2, 3, 1)  # (batch_size, 24, 24, num_classes)
+        pixel_features = torch.einsum('bnhc, ce->bnhe', segmentation_probs, self.class_embeds.weight[:-1, :])
+        pixel_features = rearrange(pixel_features, 'b h w c -> b (h w) c')
+        
+        # get object queries
         predicted_classes = torch.argmax(masks_classes, dim=-1) 
         confidence_scores = torch.max(masks_classes, dim=-1).values
         _, topk_indices = torch.topk(confidence_scores, k=self.num_k, dim=-1)
@@ -66,7 +81,7 @@ class Mask2FormerVisionTower(nn.Module):
             topk_labels_embeds = self.class_embeds(topk_labels)
             topk_mask_queries += topk_labels_embeds
         
-        return topk_mask_queries
+        return topk_mask_queries, pixel_features
 
     @property
     def dtype(self):
