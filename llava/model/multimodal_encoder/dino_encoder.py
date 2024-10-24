@@ -249,9 +249,9 @@ class DinoVisionTower(BaseVisionTower):
         
         
         self.is_loaded = True
-        if model_path is not None and os.path.exists(os.path.join(model_path, "model-00003-of-00004.safetensors")):
+        if model_path is not None and os.path.exists(os.path.join(model_path, "model-00003-of-00003.safetensors")):
             from safetensors.torch import load_file
-            state_dict = load_file(os.path.join(model_path, "model-00003-of-00004.safetensors"))
+            state_dict = load_file(os.path.join(model_path, "model-00003-of-00003.safetensors"))
             state_dict_real = {
                 k.replace('model.prompt_tower.', ''): v
                 for k, v in state_dict.items()
