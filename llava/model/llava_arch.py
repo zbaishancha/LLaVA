@@ -198,10 +198,10 @@ class LlavaMetaForCausalLM(ABC):
                 B, L, C = inputs_embeds.shape
                 inputs_embeds = inputs_embeds.unsqueeze(1).repeat(1, num, 1, 1).reshape(-1, L, C)
             concat_prompt_images = torch.cat([image for image in prompt_images], dim=0)
-            # concat_object_images = torch.cat([image for image in object_images], dim=0)
+            concat_object_images = torch.cat([image for image in object_images], dim=0)
             
             image_features = self.encode_images(concat_images, inputs_embeds, 
-                                                concat_prompt_images, concat_object_images=None)
+                                                concat_prompt_images, concat_object_images=concat_object_images)
             
             split_sizes = [image.shape[0] for image in images]
             image_features = torch.split(image_features, split_sizes, dim=0)
