@@ -30,14 +30,14 @@ class Mask2FormerVisionTower(nn.Module):
         """self.vision_tower_name = "/mnt/csi-data-aly/shared/public/haozhou/checkpoints/mask2former-swin-large-cityscapes-semantic"""
         
         # load Mask2Former fine-tuned on Cityscapes semantic segmentation
-        self.vision_tower = Mask2FormerForUniversalSegmentation.from_pretrained(self.vision_tower_name)
+        # self.vision_tower = Mask2FormerForUniversalSegmentation.from_pretrained(self.vision_tower_name)
         self.image_processor = AutoImageProcessor.from_pretrained(self.vision_tower_name)
-        self.vision_tower.requires_grad_(False)
+        # self.vision_tower.requires_grad_(False)
         
         self.has_class = True
-        if self.has_class:
-            self.class_embeds = nn.Embedding(20, 256)
-            self.class_embeds.requires_grad_(True)
+        # # if self.has_class:
+        # #     self.class_embeds = nn.Embedding(20, 256)
+        # #     self.class_embeds.requires_grad_(True)
         self.num_k = 16
         self.is_loaded = True
         if self.has_class and model_path is not None and os.path.exists(os.path.join(model_path, "model-00003-of-00003.safetensors")):
