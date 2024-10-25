@@ -173,7 +173,7 @@ class LlavaMetaForCausalLM(ABC):
         image_features = self.get_model().get_vision_tower()(images)
         
         image_features = self.get_model().get_prompt_tower()(concat_prompt_images, 
-                                                             input_embeds=None, 
+                                                             input_embeds=inputs_embeds, 
                                                              image_features=image_features, 
                                                              object_queries=object_queries)
         image_features = self.get_model().mm_projector(image_features)
