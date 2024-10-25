@@ -191,34 +191,33 @@ class DinoVisionTower(BaseVisionTower):
 
     def load_model(self, device_map=None, model_path=None, feature_fusion_strategy='one-cross'):
 
-        # self.vision_tower = Dinov2Model.from_pretrained(self.vision_tower_name)
-        # """ValueError: Dinov2Model does not support `device_map='auto'`. To implement support, the model class needs to implement the `_no_split_modules` attribute."""
-        # self.vision_tower._no_split_modules = ["Dinov2SwiGLUFFN"]
+        self.vision_tower = Dinov2Model.from_pretrained(self.vision_tower_name)
+        """ValueError: Dinov2Model does not support `device_map='auto'`. To implement support, the model class needs to implement the `_no_split_modules` attribute."""
+        self.vision_tower._no_split_modules = ["Dinov2SwiGLUFFN"]
 
-        # _image_size = self.vision_tower.config.image_size
-        # if self._image_size is None:
-        #     self._image_size = _image_size
-        # else:
-        #     logger.warning(f"Overriding DinoVisionTower image size of {_image_size} with {self._image_size}")
+        _image_size = self.vision_tower.config.image_size
+        if self._image_size is None:
+            self._image_size = _image_size
+        else:
+            logger.warning(f"Overriding DinoVisionTower image size of {_image_size} with {self._image_size}")
 
         # increase shortest edge to prevent edge case crops
         default_shortest_ratio = 8/7  # 224/256
         # shortest_edge = int(default_shortest_ratio * self._image_size)
-        self._image_size = 518
-        shortest_edge = 518
+        shortest_edge = self._image_size
 
         processor = AutoImageProcessor.from_pretrained(self.vision_tower_name, crop_size=dict(height=self._image_size, width=self._image_size), size=dict(shortest_edge=shortest_edge))
 
         self.image_processor = processor
 
-        # # Assign the output channels of the projection convolution as the hidden size
-        # self._hidden_size = self.vision_tower.embeddings.patch_embeddings.projection.out_channels
-        # # Assign the first value of the stride of the projection convolution as the patch size
-        # self._patch_size = self.vision_tower.embeddings.patch_embeddings.projection.stride[0]
+        # Assign the output channels of the projection convolution as the hidden size
+        self._hidden_size = self.vision_tower.embeddings.patch_embeddings.projection.out_channels
+        # Assign the first value of the stride of the projection convolution as the patch size
+        self._patch_size = self.vision_tower.embeddings.patch_embeddings.projection.stride[0]
 
         #print(self._hidden_size, self._patch_size)
 
-        # self.vision_tower.requires_grad_(self.unfreeze_mm_vision_tower)
+        self.vision_tower.requires_grad_(self.unfreeze_mm_vision_tower)
         # self.text_projection = nn.Linear(4096, 1024)
         self.query_projection = nn.Linear(256, 1024)
         self.query_projection.requires_grad_(True)
@@ -315,13 +314,13 @@ class DinoVisionTower(BaseVisionTower):
             return interp_features
     
     def forward(self, images, input_embeds=None, image_features=None, object_queries=None):
-        # prompt_image_features = self._forward(images) # B, N, D
+        prompt_image_features = self._forward(images) # B, N, D
         # text_embedding = self.text_projection(input_embeds) # B, N, D
         queries_embedding = self.query_projection(object_queries) # B, N, D
         
         if self.feature_fusion_strategy == 'one-cross':
             # prompt_features = torch.cat([image_features, prompt_image_features, text_embedding, queries_embedding], dim=1)
-            prompt_features = torch.cat([image_features, queries_embedding], dim=1)
+            prompt_features = torch.cat([image_features, prompt_image_features, queries_embedding], dim=1)
             image_features = image_features + self.prompt_module(image_features, prompt_features)
         
         elif self.feature_fusion_strategy == 'cat':
