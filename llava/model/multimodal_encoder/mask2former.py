@@ -33,7 +33,7 @@ class Mask2FormerVisionTower(nn.Module):
         self.image_processor = AutoImageProcessor.from_pretrained(self.vision_tower_name)
         self.vision_tower.requires_grad_(False)
         
-        self.has_class = True
+        self.has_class = False
         if self.has_class:
             self.class_embeds = nn.Embedding(20, 256)
             self.class_embeds.requires_grad_(True)
