@@ -39,9 +39,9 @@ class Mask2FormerVisionTower(nn.Module):
             self.class_embeds.requires_grad_(True)
         self.num_k = 16
         self.is_loaded = True
-        if self.has_class and model_path is not None and os.path.exists(os.path.join(model_path, "model-00004-of-00004.safetensors")):
+        if self.has_class and model_path is not None and os.path.exists(os.path.join(model_path, "model-00003-of-00003.safetensors")):
             from safetensors.torch import load_file
-            state_dict = load_file(os.path.join(model_path, "model-00004-of-00004.safetensors"))
+            state_dict = load_file(os.path.join(model_path, "model-00003-of-00003.safetensors"))
             state_dict_real = {
                 k.replace('model.object_tower.', ''): v
                 for k, v in state_dict.items() if "class_embeds" in k
