@@ -5,6 +5,7 @@ import os
 import math
 import json
 from transformers import Dinov2Model, AutoImageProcessor, Dinov2Config
+from einops import rearrange
 
 from .base_encoder import BaseVisionTower
 
@@ -313,10 +314,17 @@ class DinoVisionTower(BaseVisionTower):
             # logger.warning(f"interp_features shape: {interp_features.shape}")
             return interp_features
     
-    def forward(self, images, input_embeds, image_features, object_queries):
+    def forward(self, images, input_embeds, image_features, object_queries, num_frames=5):
         prompt_image_features = self._forward(images) # B, N, D
         text_embedding = self.text_projection(input_embeds) # B, N, D
         queries_embedding = self.query_projection(object_queries) # B, N, D
+        
+        B, _, _ = prompt_image_features.shape
+        b = int(B // num_frames)
+        image_features = rearrange(image_features, '(b f) n d -> b (f n) d', b=b, f=num_frames)
+        prompt_image_features = rearrange(prompt_image_features, '(b f) n d -> b (f n) d', b=b, f=num_frames)
+        queries_embedding = rearrange(queries_embedding, '(b f) n d -> b (f n) d', b=b, f=num_frames)
+        text_embedding = rearrange(text_embedding, '(b f) n d -> b f n d', b=b, f=num_frames)[:, 0, ...].contiguous()
         
         if self.feature_fusion_strategy == 'one-cross':
             prompt_features = torch.cat([image_features, prompt_image_features, text_embedding, queries_embedding], dim=1)
