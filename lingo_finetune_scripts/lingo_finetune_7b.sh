@@ -38,11 +38,12 @@ torchrun --nproc_per_node=8 \
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
     --tf32 True \
-    --model_max_length 1024 \
+    --model_max_length 3072 \
     --gradient_checkpointing True \
     --dataloader_num_workers 4 \
     --lazy_preprocess True \
-    --report_to tensorboard
+    --report_to tensorboard \
+    --crop False
 
 # multi nodes
 # --nnodes=${WORLD_SIZE} \
