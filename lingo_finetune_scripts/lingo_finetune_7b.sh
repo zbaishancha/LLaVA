@@ -24,8 +24,8 @@ torchrun --nproc_per_node=8 \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/llava-v1.5-7b-task-hop-32tokens \
-    --exp_name finetune_llava_v1.5_7b_lingoqa_hop_32tokens \
+    --output_dir ./checkpoints/llava-v1.5-7b-task-hop-8tokens \
+    --exp_name finetune_llava_v1.5_7b_lingoqa_hop_8tokens \
     --num_train_epochs 1 \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 1 \
