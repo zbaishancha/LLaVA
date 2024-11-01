@@ -16,7 +16,6 @@ data = []
 with open(pre_json_file) as file:
     for sample in jsonlines.Reader(file):
         data.append(sample)
-        data.append(copy.deepcopy(sample)) # for repeat answer
         
 
 with open(ori_val_file, 'r') as file:
