@@ -13,7 +13,7 @@ torchrun --nproc_per_node=8 \
     --deepspeed ./scripts/zero3.json \
     --model_name_or_path /mnt/csi-data-aly/shared/public/haozhou/checkpoints/LLaVA/llava-v1.5-7b \
     --version v1 \
-    --data_path ./playground/data/DRAMA/train.json \
+    --data_path ./playground/data/DRAMA/train_filtered.json \
     --vision_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/clip-vit-large-patch14-336 \
     --mm_projector_type mlp2x_gelu \
     --mm_vision_select_layer -2 \
