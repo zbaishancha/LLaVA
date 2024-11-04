@@ -39,3 +39,4 @@ playground/
 mlruns/
 *.csv
 *.png
+mask2former/

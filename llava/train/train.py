@@ -76,6 +76,7 @@ class DataArguments:
     image_aspect_ratio: str = 'square'
     crop_ratio: int = 0.65
     crop: bool = True
+    max_length: int = 20
     
 
 @dataclass
@@ -658,6 +659,37 @@ def preprocess(
     return dict(input_ids=input_ids, labels=targets)
 
 
+def preprocess_question(sources,
+                        tokenizer: transformers.AutoTokenizer,
+                        data_dict: dict,
+                        max_length: int=30):
+    
+    question = []
+    for i, source in enumerate(sources):
+        for conversation in source:
+            if conversation['from'] == 'human':
+                if "<image>\n" in conversation["value"]:
+                    question.append(conversation["value"].replace("<image>\n", ''))
+                elif "\n<image>" in conversation["value"]:
+                    question.append(conversation["value"].replace("\n<image>", ''))
+                elif "\n<image>\n" in conversation["value"]:
+                    question.append(conversation["value"].replace("\n<image>\n", ''))
+    
+    def join_strings(strings):
+        return ' '.join(strings)
+    
+    question = join_strings(question)
+    
+    question_ids = tokenizer(question,
+                        return_tensors="pt",
+                        padding='max_length',
+                        max_length=max_length,
+                        truncation=True).input_ids
+  
+    data_dict['question_ids'] = question_ids.squeeze(0)
+    
+    return data_dict
+
 class LazySupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
@@ -673,6 +705,7 @@ class LazySupervisedDataset(Dataset):
         self.data_args = data_args
         self.crop = data_args.crop
         self.crop_ratio = data_args.crop_ratio
+        self.max_length = data_args.max_length
 
     def __len__(self):
         return len(self.list_data_dict)
@@ -778,6 +811,7 @@ class LazySupervisedDataset(Dataset):
             # image does not exist in the data, but the model is multimodal
             crop_size = self.data_args.image_processor.crop_size
             data_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
+        data_dict = preprocess_question(sources, self.tokenizer, data_dict, max_length=self.max_length)
         return data_dict
 
 
@@ -787,8 +821,8 @@ class DataCollatorForSupervisedDataset(object):
     tokenizer: transformers.PreTrainedTokenizer
     
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
-        input_ids, labels = tuple([instance[key] for instance in instances]
-                                  for key in ("input_ids", "labels"))
+        input_ids, labels, question_ids = tuple([instance[key] for instance in instances]
+                                  for key in ("input_ids", "labels", "question_ids"))
         input_ids = torch.nn.utils.rnn.pad_sequence(
             input_ids,
             batch_first=True,
@@ -802,6 +836,7 @@ class DataCollatorForSupervisedDataset(object):
             input_ids=input_ids,
             labels=labels,
             attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
+            question_ids=torch.stack(question_ids, dim=0),
         )
         if 'image' in instances[0]:
             

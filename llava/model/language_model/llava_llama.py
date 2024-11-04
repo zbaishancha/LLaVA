@@ -58,6 +58,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         self,
         input_ids: torch.LongTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
+        question_ids: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_values: Optional[List[torch.FloatTensor]] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
@@ -68,6 +69,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         images: Optional[torch.FloatTensor] = None,
         image_sizes: Optional[List[List[int]]] = None,
         return_dict: Optional[bool] = None,
+        cache_position=None
     ) -> Union[Tuple, CausalLMOutputWithPast]:
 
         if inputs_embeds is None:
@@ -85,7 +87,8 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
                 past_key_values,
                 labels,
                 images,
-                image_sizes
+                image_sizes,
+                question_ids
             )
 
         return super().forward(
@@ -105,6 +108,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
     def generate(
         self,
         inputs: Optional[torch.Tensor] = None,
+        question_ids: Optional[torch.Tensor] = None,
         images: Optional[torch.Tensor] = None,
         image_sizes: Optional[torch.Tensor] = None,
         **kwargs,
@@ -129,7 +133,8 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
                 None,
                 None,
                 images,
-                image_sizes=image_sizes
+                image_sizes=image_sizes,
+                question_ids=question_ids,
             )
         else:
             inputs_embeds = self.get_model().embed_tokens(inputs)
