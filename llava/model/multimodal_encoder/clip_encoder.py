@@ -7,9 +7,9 @@ import torch.nn.functional as F
 from transformers import CLIPVisionModel, CLIPImageProcessor, CLIPVisionConfig, AutoTokenizer, CLIPModel, CLIPTextModel
 from safetensors.torch import load_file
 
-from llava.model.multimodal_encoder.dinov2_head import DistillDINOv2
-from llava.model.multimodal_encoder.mask2former_head import DistillMaskFormer
-from llava.model.multimodal_encoder.modules import CrossModalAttention
+from .dinov2_head import DistillDINOv2
+from .mask2former_head import DistillMaskFormer
+from .modules import CrossModalAttention
 
 class CLIPVisionTower(nn.Module):
     def __init__(self, vision_tower, args, delay_load=False):

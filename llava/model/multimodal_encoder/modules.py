@@ -5,8 +5,8 @@ import torch.nn.functional as F
 
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
-from llava.model.multimodal_encoder.pixel_decoder.msdeformattn import MSDeformAttnPixelDecoder
-from llava.model.multimodal_encoder.transformer_decoder.mask2former_transformer_decoder import MultiScaleMaskedTransformerDecoder
+from .pixel_decoder.msdeformattn import MSDeformAttnPixelDecoder
+from .transformer_decoder.mask2former_transformer_decoder import MultiScaleMaskedTransformerDecoder
 
 # helpers
 

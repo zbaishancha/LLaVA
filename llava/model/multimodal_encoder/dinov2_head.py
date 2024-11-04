@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
-from llava.model.multimodal_encoder.modules import Transformer 
+from .modules import Transformer 
 
 transformer_kwargs = {
     "dim": 512,

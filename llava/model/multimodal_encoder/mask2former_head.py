@@ -4,7 +4,7 @@ from typing import Tuple
 import torch
 from torch import nn
 from torch.nn import functional as F
-from llava.model.multimodal_encoder.modules import MaskFormerHead
+from .modules import MaskFormerHead
 
 from PIL import Image
 import math
