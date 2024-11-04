@@ -1,4 +1,0 @@
-# ninja log v5
-1	6580	1730288549444946271	/mnt/csi-data-aly/user/haozhou/Projects/Mask2Former/mask2former/modeling/pixel_decoder/ops/build/temp.linux-x86_64-3.8/mnt/csi-data-aly/user/haozhou/Projects/Mask2Former/mask2former/modeling/pixel_decoder/ops/src/cpu/ms_deform_attn_cpu.o	151e2dea00b59324
-1	19015	1730288561877769562	/mnt/csi-data-aly/user/haozhou/Projects/Mask2Former/mask2former/modeling/pixel_decoder/ops/build/temp.linux-x86_64-3.8/mnt/csi-data-aly/user/haozhou/Projects/Mask2Former/mask2former/modeling/pixel_decoder/ops/src/cuda/ms_deform_attn_cuda.o	4dc3ed7ef51ad066
-1	21759	1730288564618223896	/mnt/csi-data-aly/user/haozhou/Projects/Mask2Former/mask2former/modeling/pixel_decoder/ops/build/temp.linux-x86_64-3.8/mnt/csi-data-aly/user/haozhou/Projects/Mask2Former/mask2former/modeling/pixel_decoder/ops/src/vision.o	83ae22b703245808
