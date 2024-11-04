@@ -168,11 +168,8 @@ class MSDeformAttnTransformerEncoder(nn.Module):
 
 
 class MSDeformAttnPixelDecoder(nn.Module):
-    @configurable
     def __init__(
         self,
-        input_shape: Dict[str, ShapeSpec],
-        *,
         transformer_dropout: float = 0.0,
         transformer_nheads: int = 8,
         transformer_dim_feedforward: int = 1024,
@@ -181,7 +178,6 @@ class MSDeformAttnPixelDecoder(nn.Module):
         mask_dim: int = 256,
         norm: Optional[Union[str, Callable]] = 'GN',
         # deformable transformer encoder args
-        transformer_in_features: List[str],
         common_stride: int = 4,
     ):
         """

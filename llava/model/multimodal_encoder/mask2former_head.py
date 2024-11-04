@@ -11,8 +11,7 @@ import math
 
 class MultiScaleFeatureExtractor(nn.Module):
     def __init__(self):
-        super(MultiScaleFeatureExtractor, self).__init__()
-
+        super().__init__()
         self.to_res4 = nn.Conv2d(1024, 768, kernel_size=1, stride=1, padding=0)
         self.downsample_res5 = nn.Sequential(
             nn.Conv2d(768, 1536, kernel_size=2, stride=2, padding=0),
@@ -59,24 +58,21 @@ class DistillMaskFormer(nn.Module):
     Main class for mask classification semantic segmentation architectures.
     """
     def __init__(self, ckpt=CKPT):
-        
+        super().__init__()
         self.neck = MultiScaleFeatureExtractor()
         self.sem_seg_head = MaskFormerHead()
         
         self.neck.requires_grad_(False)
         self.sem_seg_head.requires_grad_(False)
         
-        state_dict = torch.load(ckpt, map_location='cpu')
-        state_dict_real = {
-            k.replace('module.', ''): v
-            for k, v in state_dict.items()
-        }
-        missing, unexpected = self.load_state_dict(state_dict_real, strict=False)
+        state_dict = torch.load(ckpt, map_location='cpu')['model']
+        missing, unexpected = self.load_state_dict(state_dict, strict=False)
         assert len(missing) == 0
         
         self.class_embeds = nn.Embedding(20, 256)
         self.class_embeds.requires_grad_(True)
         self.has_class = True
+        self.num_k = 16
     
     @property
     def dtype(self):
@@ -86,11 +82,13 @@ class DistillMaskFormer(nn.Module):
     def device(self):
         return self.class_embeds.weight.device
 
-
     def forward(self, clip_features):
-
+        clip_features = clip_features.to(device=self.device, dtype=self.dtype)
         features = self.neck(clip_features)
-        outputs = self.sem_seg_head(features)
+        ori_dtype = features['res2'].dtype
+        self.sem_seg_head.to(dtype=torch.float32)
+        outputs_float = self.sem_seg_head(features)
+        outputs = {k: v.to(dtype=ori_dtype) for k, v in outputs_float.items()}
         class_queries_logits = outputs['pred_logits']
         mask_queries = outputs["transformer_decoder_last_hidden_state"]
         masks_classes = class_queries_logits.softmax(dim=-1)[..., :-1]
@@ -104,3 +102,10 @@ class DistillMaskFormer(nn.Module):
             topk_mask_queries += topk_labels_embeds
         
         return topk_mask_queries
+
+if __name__ == "__main__":
+    model = DistillMaskFormer().cuda().to(dtype=torch.float16)
+    x = torch.randn(2, 576, 1024)
+    out = model(x)
+    print(out.shape)
+    print(out.dtype)
