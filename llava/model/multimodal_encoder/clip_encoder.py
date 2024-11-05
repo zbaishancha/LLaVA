@@ -7,9 +7,8 @@ import torch.nn.functional as F
 from transformers import CLIPVisionModel, CLIPImageProcessor, CLIPVisionConfig, AutoTokenizer, CLIPModel, CLIPTextModel
 from safetensors.torch import load_file
 
-from .dinov2_head import DistillDINOv2
-from .mask2former_head import DistillMaskFormer
 from .modules import CrossModalAttention
+from .efficient_head import EfficientHead
 
 class CLIPVisionTower(nn.Module):
     def __init__(self, vision_tower, args, delay_load=False):
@@ -37,17 +36,20 @@ class CLIPVisionTower(nn.Module):
         self.vision_tower = CLIPVisionModel.from_pretrained(self.vision_tower_name, device_map=device_map)
         self.vision_tower.requires_grad_(False)
 
-        self.dinov2_head = DistillDINOv2()
-        self.dinov2_head.requires_grad_(False)
-        self.mask2former_head = DistillMaskFormer()
-        self.mask2former_head.requires_grad_(False)      
-          
+        self.efficient_head = EfficientHead.from_pretrained("/mnt/csi-data-aly/user/haozhou/Projects/LLaVA/pretrained")
+        self.efficient_head.requires_grad_(False)
+        
         self.text_projection = nn.Linear(4096, 1024)
         self.query_projection = nn.Linear(256, 1024)
         self.query_projection.requires_grad_(True)
         self.text_projection.requires_grad_(True)
         self.prompt_module = CrossModalAttention()
         self.prompt_module.requires_grad_(True)
+        
+        self.class_embeds = nn.Embedding(20, 256)
+        self.class_embeds.requires_grad_(True)
+        self.has_class = True
+        self.num_k = 16
         
         self.is_loaded = True
 
@@ -73,8 +75,12 @@ class CLIPVisionTower(nn.Module):
                 image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=True)
                 image_features = self.feature_select(image_forward_outs).to(images.dtype)
         
-        prompt_image_features = self.dinov2_head(image_features)
-        object_queries = self.mask2former_head(image_features)
+            prompt_image_features, object_queries, topk_labels = self.efficient_head(image_features)
+
+        if self.has_class:
+            topk_labels_embeds = self.class_embeds(topk_labels)
+            object_queries += topk_labels_embeds
+        
         text_embedding = self.text_projection(inputs_embeds) # B, N, D
         queries_embedding = self.query_projection(object_queries) # B, N, D
         prompt_features = torch.cat([image_features, prompt_image_features, text_embedding, queries_embedding], dim=1)

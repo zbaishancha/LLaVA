@@ -27,7 +27,7 @@ class SelfAttentionLayer(nn.Module):
         self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
 
-        self._reset_parameters()
+        # self._reset_parameters()
     
     def _reset_parameters(self):
         for p in self.parameters():
@@ -85,7 +85,7 @@ class CrossAttentionLayer(nn.Module):
         self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
 
-        self._reset_parameters()
+        # self._reset_parameters()
     
     def _reset_parameters(self):
         for p in self.parameters():
@@ -150,7 +150,7 @@ class FFNLayer(nn.Module):
         self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
 
-        self._reset_parameters()
+        # self._reset_parameters()
     
     def _reset_parameters(self):
         for p in self.parameters():

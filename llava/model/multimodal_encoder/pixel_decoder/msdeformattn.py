@@ -44,7 +44,7 @@ class MSDeformAttnTransformerEncoderOnly(nn.Module):
 
         self.level_embed = nn.Parameter(torch.Tensor(num_feature_levels, d_model))
 
-        self._reset_parameters()
+        # self._reset_parameters()
 
     def _reset_parameters(self):
         for p in self.parameters():

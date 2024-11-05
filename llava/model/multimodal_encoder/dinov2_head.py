@@ -25,13 +25,13 @@ class DistillDINOv2(nn.Module):
             Transformer(**transformer_kwargs),
             nn.Linear(512, 1024)
         )
-        state_dict = torch.load(ckpt, map_location='cpu')
-        state_dict_real = {
-            k.replace('module.', ''): v
-            for k, v in state_dict.items()
-        }
-        missing, unexpected = self.load_state_dict(state_dict_real, strict=False)
-        assert len(missing) == 0
+        # state_dict = torch.load(ckpt, map_location='cpu')
+        # state_dict_real = {
+        #     k.replace('module.', ''): v
+        #     for k, v in state_dict.items()
+        # }
+        # missing, unexpected = self.load_state_dict(state_dict_real, strict=False)
+        # assert len(missing) == 0
         self.decoder.requires_grad_(False)
     
     @property

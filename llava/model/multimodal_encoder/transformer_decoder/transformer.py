@@ -48,7 +48,7 @@ class Transformer(nn.Module):
             return_intermediate=return_intermediate_dec,
         )
 
-        self._reset_parameters()
+        # self._reset_parameters()
 
         self.d_model = d_model
         self.nhead = nhead

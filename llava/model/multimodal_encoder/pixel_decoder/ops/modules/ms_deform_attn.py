@@ -61,7 +61,7 @@ class MSDeformAttn(nn.Module):
         self.value_proj = nn.Linear(d_model, d_model)
         self.output_proj = nn.Linear(d_model, d_model)
 
-        self._reset_parameters()
+        # self._reset_parameters()
 
     def _reset_parameters(self):
         constant_(self.sampling_offsets.weight.data, 0.)

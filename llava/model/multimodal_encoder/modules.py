@@ -15,7 +15,7 @@ def pair(t):
 
 # classes
 class CrossModalAttention(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config=None):
         super(CrossModalAttention, self).__init__()
 
         self.embed_dim = 1024

@@ -75,7 +75,7 @@ class DataArguments:
     image_folder: Optional[str] = field(default=None)
     image_aspect_ratio: str = 'square'
     crop_ratio: int = 0.65
-    crop: bool = True
+    crop: bool = False
     max_length: int = 20
     
 

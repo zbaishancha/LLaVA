@@ -65,24 +65,22 @@ class DistillMaskFormer(nn.Module):
         self.neck.requires_grad_(False)
         self.sem_seg_head.requires_grad_(False)
         
-        state_dict = torch.load(ckpt, map_location='cpu')['model']
-        missing, unexpected = self.load_state_dict(state_dict, strict=False)
-        assert len(missing) == 0
-        
-        self.class_embeds = nn.Embedding(20, 256)
-        self.class_embeds.requires_grad_(True)
-        self.has_class = True
+        # state_dict = torch.load(ckpt, map_location='cpu')['model']
+        # missing, unexpected = self.load_state_dict(state_dict, strict=False)
+        # assert len(missing) == 0
         self.num_k = 16
     
     @property
     def dtype(self):
-        return self.class_embeds.weight.dtype
+        return next(self.neck.parameters()).dtype
 
     @property
     def device(self):
-        return self.class_embeds.weight.device
+        return next(self.neck.parameters()).device
 
+    @torch.no_grad()
     def forward(self, clip_features):
+        self.eval()
         clip_features = clip_features.to(device=self.device, dtype=self.dtype)
         features = self.neck(clip_features)
         ori_dtype = features['res2'].dtype
@@ -97,11 +95,8 @@ class DistillMaskFormer(nn.Module):
         _, topk_indices = torch.topk(confidence_scores, k=self.num_k, dim=-1)
         topk_mask_queries = mask_queries.gather(1, topk_indices.unsqueeze(-1).expand(-1, -1, mask_queries.size(-1)))
         topk_labels = predicted_classes.gather(1, topk_indices)
-        if self.has_class:
-            topk_labels_embeds = self.class_embeds(topk_labels)
-            topk_mask_queries += topk_labels_embeds
         
-        return topk_mask_queries
+        return topk_mask_queries, topk_labels
 
 if __name__ == "__main__":
     model = DistillMaskFormer().cuda().to(dtype=torch.float16)
