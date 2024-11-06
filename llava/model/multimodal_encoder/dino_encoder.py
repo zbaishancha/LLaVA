@@ -345,6 +345,12 @@ class DinoVisionTower(BaseVisionTower):
         
         return image_features
 
+    def affinity_forward(self, images):
+        prompt_image_features = self._forward(images) # B, N, D
+        normalized_features = F.normalize(prompt_image_features, p=2, dim=-1)
+        affinity_matrix = torch.einsum('bnd,bmd->bnm', normalized_features, normalized_features)  # (B, N, N)
+        affinity_features = self.prompt_projection(affinity_matrix)
+        return affinity_features
 
     @property
     def num_patches_per_side(self):
