@@ -27,7 +27,7 @@ class CLIPVisionTower(nn.Module):
         else:
             self.cfg_only = CLIPVisionConfig.from_pretrained(self.vision_tower_name)
 
-    def load_model(self, device_map=None):
+    def load_model(self, device_map=None, model_path=None):
         if self.is_loaded:
             print('{} is already loaded, `load_model` called again, skipping.'.format(self.vision_tower_name))
             return
@@ -40,17 +40,24 @@ class CLIPVisionTower(nn.Module):
         self.efficient_head.requires_grad_(False)
         
         self.text_projection = nn.Linear(4096, 1024)
-        self.query_projection = nn.Linear(256, 1024)
-        self.query_projection.requires_grad_(True)
+        # self.query_projection = nn.Linear(256, 1024)
+        # self.query_projection.requires_grad_(True)
         self.text_projection.requires_grad_(True)
         self.prompt_module = CrossModalAttention()
         self.prompt_module.requires_grad_(True)
         
-        self.class_embeds = nn.Embedding(20, 256)
-        self.class_embeds.requires_grad_(True)
-        self.has_class = True
-        self.num_k = 16
-        
+        # self.class_embeds = nn.Embedding(20, 256)
+        # self.class_embeds.requires_grad_(True)
+        # self.has_class = True
+        # self.num_k = 16   self.has_class and 
+        if model_path is not None and os.path.exists(os.path.join(model_path, "model-00003-of-00003.safetensors")):
+            from safetensors.torch import load_file
+            state_dict = load_file(os.path.join(model_path, "model-00003-of-00003.safetensors"))
+            state_dict_real = {
+                k.replace('model.vision_tower.', ''): v
+                for k, v in state_dict.items()
+            }
+            missing, unexpected = self.load_state_dict(state_dict_real, strict=False)
         self.is_loaded = True
 
     def feature_select(self, image_forward_outs):
@@ -75,17 +82,17 @@ class CLIPVisionTower(nn.Module):
                 image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=True)
                 image_features = self.feature_select(image_forward_outs).to(images.dtype)
         
-            prompt_image_features, object_queries, topk_labels = self.efficient_head(image_features)
-
-        if self.has_class:
-            topk_labels_embeds = self.class_embeds(topk_labels)
-            object_queries += topk_labels_embeds
+            prompt_image_features = self.efficient_head(image_features)
+        # object_queries, topk_labels
+        # if self.has_class:
+        #     topk_labels_embeds = self.class_embeds(topk_labels)
+        #     object_queries += topk_labels_embeds
         
-        text_embedding = self.text_projection(inputs_embeds) # B, N, D
-        queries_embedding = self.query_projection(object_queries) # B, N, D
-        prompt_features = torch.cat([image_features, prompt_image_features, text_embedding, queries_embedding], dim=1)
-        image_features = image_features + self.prompt_module(image_features, prompt_features)
-        return image_features
+        text_embedding = self.text_projection(inputs_embeds.to(dtype=self.dtype)) # B, N, D
+        # queries_embedding = self.query_projection(object_queries.to(dtype=self.dtype)) # B, N, D
+        prompt_features = torch.cat([image_features, prompt_image_features, text_embedding], dim=1)
+        image_features = image_features.to(dtype=self.dtype) + self.prompt_module(image_features.to(dtype=self.dtype), prompt_features)
+        return image_features.to(images.dtype)
 
     @property
     def dummy_feature(self):

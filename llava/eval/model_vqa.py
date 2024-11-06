@@ -53,6 +53,13 @@ def eval_model(args):
         image_path_list = line["image_path_list"]
         qs = line["text"]
         cur_prompt = qs
+        
+        question_ids = tokenizer(qs,
+                        return_tensors="pt",
+                        padding='max_length',
+                        max_length=20,
+                        truncation=True).input_ids
+        
         if model.config.mm_use_im_start_end:
             qs = DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN + '\n' + qs
         else:
@@ -81,7 +88,8 @@ def eval_model(args):
                 num_beams=args.num_beams,
                 # no_repeat_ngram_size=3,
                 max_new_tokens=1024,
-                use_cache=True)
+                use_cache=True,
+                question_ids=question_ids.to(device=model.device))
 
         outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
 
