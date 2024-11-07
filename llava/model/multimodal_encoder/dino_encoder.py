@@ -191,40 +191,41 @@ class DinoVisionTower(BaseVisionTower):
 
     def load_model(self, device_map=None, model_path=None, feature_fusion_strategy='one-cross'):
 
-        # self.vision_tower = Dinov2Model.from_pretrained(self.vision_tower_name)
-        # """ValueError: Dinov2Model does not support `device_map='auto'`. To implement support, the model class needs to implement the `_no_split_modules` attribute."""
-        # self.vision_tower._no_split_modules = ["Dinov2SwiGLUFFN"]
+        self.vision_tower = Dinov2Model.from_pretrained(self.vision_tower_name)
+        """ValueError: Dinov2Model does not support `device_map='auto'`. To implement support, the model class needs to implement the `_no_split_modules` attribute."""
+        self.vision_tower._no_split_modules = ["Dinov2SwiGLUFFN"]
 
-        # _image_size = self.vision_tower.config.image_size
-        # if self._image_size is None:
-        #     self._image_size = _image_size
-        # else:
-        #     logger.warning(f"Overriding DinoVisionTower image size of {_image_size} with {self._image_size}")
+        _image_size = self.vision_tower.config.image_size
+        if self._image_size is None:
+            self._image_size = _image_size
+        else:
+            logger.warning(f"Overriding DinoVisionTower image size of {_image_size} with {self._image_size}")
 
         # increase shortest edge to prevent edge case crops
         default_shortest_ratio = 8/7  # 224/256
         # shortest_edge = int(default_shortest_ratio * self._image_size)
-        self._image_size = 518
         shortest_edge = self._image_size
 
         processor = AutoImageProcessor.from_pretrained(self.vision_tower_name, crop_size=dict(height=self._image_size, width=self._image_size), size=dict(shortest_edge=shortest_edge))
 
         self.image_processor = processor
 
-        # # Assign the output channels of the projection convolution as the hidden size
-        # self._hidden_size = self.vision_tower.embeddings.patch_embeddings.projection.out_channels
-        # # Assign the first value of the stride of the projection convolution as the patch size
-        # self._patch_size = self.vision_tower.embeddings.patch_embeddings.projection.stride[0]
+        # Assign the output channels of the projection convolution as the hidden size
+        self._hidden_size = self.vision_tower.embeddings.patch_embeddings.projection.out_channels
+        # Assign the first value of the stride of the projection convolution as the patch size
+        self._patch_size = self.vision_tower.embeddings.patch_embeddings.projection.stride[0]
 
-        # #print(self._hidden_size, self._patch_size)
+        #print(self._hidden_size, self._patch_size)
 
-        # self.vision_tower.requires_grad_(self.unfreeze_mm_vision_tower)
-        # self.text_projection = nn.Linear(4096, 1024)
-        # self.query_projection = nn.Linear(256, 1024)
+        self.vision_tower.requires_grad_(self.unfreeze_mm_vision_tower)
+        self.text_projection = nn.Linear(4096, 1024)
+        self.query_projection = nn.Linear(256, 1024)
         self.prompt_projection = nn.Linear(256, 1024)
-        # self.query_projection.requires_grad_(True)
-        # self.text_projection.requires_grad_(True)
+        self.dinov2_projection = nn.Linear(576, 1024)
+        self.query_projection.requires_grad_(True)
+        self.text_projection.requires_grad_(True)
         self.prompt_projection.requires_grad_(True)
+        self.dinov2_projection.requires_grad_(True)
         
         self.feature_fusion_strategy = feature_fusion_strategy
         
@@ -249,15 +250,15 @@ class DinoVisionTower(BaseVisionTower):
         
         
         self.is_loaded = True
-        if model_path is not None and os.path.exists(os.path.join(model_path, "model-00003-of-00003.safetensors")):
+        if model_path is not None and os.path.exists(os.path.join(model_path, "model-00003-of-00004.safetensors")):
             from safetensors.torch import load_file
-            state_dict = load_file(os.path.join(model_path, "model-00003-of-00003.safetensors"))
+            state_dict = load_file(os.path.join(model_path, "model-00003-of-00004.safetensors"))
             state_dict_real = {
                 k.replace('model.prompt_tower.', ''): v
                 for k, v in state_dict.items()
             }
             missing, unexpected = self.load_state_dict(state_dict_real, strict=False)
-            assert len(missing) ==0
+            assert len(missing) == 0
 
     @property
     def image_size(self):
@@ -317,16 +318,22 @@ class DinoVisionTower(BaseVisionTower):
             return interp_features
     
     def forward(self, images, input_embeds, image_features, object_queries, pixel_features=None):
-        if pixel_features is not None:
-            prompt_image_features = self.prompt_projection(pixel_features)
-        else:
-            prompt_image_features = self._forward(images) # B, N, D
-        # text_embedding = self.text_projection(input_embeds) # B, N, D
-        # queries_embedding = self.query_projection(object_queries) # B, N, D
+        prompt_image_features = self._forward(images) # B, N, D
+        text_embedding = self.text_projection(input_embeds) # B, N, D
+        queries_embedding = self.query_projection(object_queries) # B, N, D
         
+        normalized_features = F.normalize(prompt_image_features, p=2, dim=-1)
+        affinity_matrix = torch.einsum('bnd,bmd->bnm', normalized_features, normalized_features)  # (B, N, N)
+        affinity_features = self.dinov2_projection(affinity_matrix)
+        mask2former_affinity_features = self.prompt_projection(pixel_features)
+
         if self.feature_fusion_strategy == 'one-cross':
-            # prompt_features = torch.cat([image_features, prompt_image_features, text_embedding, queries_embedding], dim=1)
-            prompt_features = torch.cat([image_features, prompt_image_features], dim=1)
+            prompt_features = torch.cat([image_features, 
+                                         prompt_image_features, 
+                                         affinity_features, 
+                                         mask2former_affinity_features, 
+                                         text_embedding, 
+                                         queries_embedding], dim=1)
             image_features = image_features + self.prompt_module(image_features, prompt_features)
         
         elif self.feature_fusion_strategy == 'cat':
