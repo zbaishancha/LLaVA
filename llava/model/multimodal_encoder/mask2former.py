@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from transformers import AutoImageProcessor, Mask2FormerForUniversalSegmentation, Mask2FormerConfig
 
-
+from .mask2former_from_scripts import MaskFormerScripts
 class Mask2FormerVisionTower(nn.Module):
     def __init__(self, vision_tower, args=None, delay_load=True):
         super().__init__()
@@ -16,7 +16,7 @@ class Mask2FormerVisionTower(nn.Module):
         self.vision_tower_name = vision_tower
         self.args = args
         self.delay_load = delay_load
-
+        self.mask2former_scripts = True
         if not delay_load:
             self.load_model()
         else:
@@ -29,7 +29,12 @@ class Mask2FormerVisionTower(nn.Module):
         """self.vision_tower_name = "/mnt/csi-data-aly/shared/public/haozhou/checkpoints/mask2former-swin-large-cityscapes-semantic"""
         
         # load Mask2Former fine-tuned on Cityscapes semantic segmentation
-        self.vision_tower = Mask2FormerForUniversalSegmentation.from_pretrained(self.vision_tower_name)
+        if self.mask2former_scripts:
+            # only support zeros2.json
+            self.vision_tower = MaskFormerScripts()
+        else:
+            self.vision_tower = Mask2FormerForUniversalSegmentation.from_pretrained(self.vision_tower_name)
+        
         self.image_processor = AutoImageProcessor.from_pretrained(self.vision_tower_name)
         self.vision_tower.requires_grad_(False)
         
