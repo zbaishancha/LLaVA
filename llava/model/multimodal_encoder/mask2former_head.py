@@ -9,6 +9,63 @@ from .modules import MaskFormerHead
 from PIL import Image
 import math
 
+
+def get_norm(norm, num_features):
+    return nn.BatchNorm2d(num_features)
+class FeaturePyramid(nn.Module):
+    def __init__(self, in_channels=1024, out_channels_list=[192, 384, 768, 1536]):
+        super(FeaturePyramid, self).__init__()
+        self.stages = nn.ModuleList()
+
+        # Scale factors to match the output dimensions for res2, res3, res4, and res5
+        scale_factors = [4.0, 2.0, 1.0, 0.5]
+        strides = [4, 2, 1, 0.5]  # strides matching each output resolution
+
+        for idx, scale in enumerate(scale_factors):
+            out_dim = in_channels  # Start from input channels (1024)
+            out_channels = out_channels_list[idx]
+
+            if scale == 4.0:  # Upsample for res2
+                layers = [
+                    nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2),
+                    get_norm("batch", in_channels // 2),
+                    nn.GELU(),
+                    nn.ConvTranspose2d(in_channels // 2, in_channels // 4, kernel_size=2, stride=2),
+                ]
+                out_dim = in_channels // 4
+            elif scale == 2.0:  # Upsample for res3
+                layers = [nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2)]
+                out_dim = in_channels // 2
+            elif scale == 1.0:  # Identity for res4
+                layers = []  # Identity layer (no transformation for res4)
+            elif scale == 0.5:  # Downsample for res5
+                layers = [nn.MaxPool2d(kernel_size=2, stride=2)]
+            else:
+                raise NotImplementedError(f"scale_factor={scale} is not supported yet.")
+
+            # Add 1x1 conv + norm + 3x3 conv with the required output channels
+            layers.extend(
+                [
+                    nn.Conv2d(out_dim, out_channels, kernel_size=1, bias=False),
+                    get_norm("batch", out_channels),
+                    nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+                    get_norm("batch", out_channels),
+                ]
+            )
+            self.stages.append(nn.Sequential(*layers))
+
+    def forward(self, x):
+        from einops import rearrange
+        _, n, _ = x.shape
+        h = w = int(math.sqrt(n))
+        x = rearrange(x, 'b (h w) c -> b c h w', h=h, w=w)
+        res2 = self.stages[0](x)  # b, 192, 96, 96
+        res3 = self.stages[1](x)  # b, 384, 48, 48
+        res4 = self.stages[2](x)  # b, 768, 24, 24
+        res5 = self.stages[3](x)  # b, 1536, 12, 12
+
+        return {"res2": res2, "res3": res3, "res4": res4, "res5": res5}
+
 class MultiScaleFeatureExtractor(nn.Module):
     def __init__(self):
         super().__init__()
@@ -59,7 +116,7 @@ class DistillMaskFormer(nn.Module):
     """
     def __init__(self, ckpt=CKPT):
         super().__init__()
-        self.neck = MultiScaleFeatureExtractor()
+        self.neck = FeaturePyramid()
         self.sem_seg_head = MaskFormerHead()
         
         self.neck.requires_grad_(False)

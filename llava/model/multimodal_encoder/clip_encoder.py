@@ -82,15 +82,15 @@ class CLIPVisionTower(nn.Module):
                 image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=True)
                 image_features = self.feature_select(image_forward_outs).to(images.dtype)
         
-            object_queries, topk_labels = self.efficient_head(image_features)
-        
+            prompt_image_features, object_queries, topk_labels = self.efficient_head(image_features)
+
         if self.has_class:
             topk_labels_embeds = self.class_embeds(topk_labels)
             object_queries += topk_labels_embeds
         
         text_embedding = self.text_projection(inputs_embeds.to(dtype=self.dtype)) # B, N, D
         queries_embedding = self.query_projection(object_queries.to(dtype=self.dtype)) # B, N, D
-        prompt_features = torch.cat([image_features, queries_embedding, text_embedding], dim=1)
+        prompt_features = torch.cat([image_features, prompt_image_features, queries_embedding, text_embedding], dim=1)
         image_features = image_features.to(dtype=self.dtype) + self.prompt_module(image_features.to(dtype=self.dtype), prompt_features)
         return image_features.to(images.dtype)
 

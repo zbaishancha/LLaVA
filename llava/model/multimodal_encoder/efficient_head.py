@@ -21,16 +21,16 @@ class EfficientHead(PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         
-        # self.dinov2_head = DistillDINOv2()
+        self.dinov2_head = DistillDINOv2()
         self.mask2former_head = DistillMaskFormer()
         self.post_init()
 
     @torch.no_grad()
     def forward(self, x):
         self.eval()
-        # decoded_features = self.dinov2_head(x)
+        decoded_features = self.dinov2_head(x)
         topk_mask_queries, topk_labels = self.mask2former_head(x)
-        return topk_mask_queries, topk_labels
+        return decoded_features, topk_mask_queries, topk_labels
 
 
 if __name__ == "__main__":
