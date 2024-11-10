@@ -42,7 +42,16 @@ def eval_model(args):
             question_id = example['id']
             image_path_list = example['image']
             text = example['conversations'][0]['value'].replace("<image>\n", "")
-            questions.append(dict(question_id=question_id, image_path_list=image_path_list, text=text))
+            if "bdd" in args.question_file.lower():
+                source_id = example['source_id']
+                time_length = example['time_length']
+                questions.append(dict(question_id=question_id, 
+                                    image_path_list=image_path_list, 
+                                    text=text,
+                                    source_id=source_id,
+                                    time_length=time_length))   
+            else:
+                questions.append(dict(question_id=question_id, image_path_list=image_path_list, text=text))
     else:
         questions = [json.loads(q) for q in open(os.path.expanduser(args.question_file), "r")]
     questions = get_chunk(questions, args.num_chunks, args.chunk_idx)
@@ -55,6 +64,9 @@ def eval_model(args):
         idx = line["question_id"]
         image_path_list = line["image_path_list"]
         qs = line["text"]
+        if "bdd" in args.question_file.lower():
+            source_id = line["source_id"]
+            time_length = line["time_length"]
         cur_prompt = qs
         
         question_ids = tokenizer(qs,
@@ -101,7 +113,17 @@ def eval_model(args):
         outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
 
         ans_id = shortuuid.uuid()
-        ans_file.write(json.dumps({"question_id": idx,
+        if "bdd" in args.question_file.lower():
+            ans_file.write(json.dumps({"source_id": source_id,
+                            "time_length": time_length,
+                            "question_id": idx,
+                            "prompt": cur_prompt,
+                            "text": outputs,
+                            "answer_id": ans_id,
+                            "model_id": model_name,
+                            "metadata": {}}) + "\n")
+        else:
+            ans_file.write(json.dumps({"question_id": idx,
                                    "prompt": cur_prompt,
                                    "text": outputs,
                                    "answer_id": ans_id,
