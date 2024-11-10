@@ -37,7 +37,7 @@ class Mask2FormerVisionTower(nn.Module):
         if self.has_class:
             self.class_embeds = nn.Embedding(20, 256)
             self.class_embeds.requires_grad_(True)
-        self.num_k = 64
+        self.num_k = 16
         self.is_loaded = True
         if self.has_class and model_path is not None and os.path.exists(os.path.join(model_path, "model-00004-of-00004.safetensors")):
             from safetensors.torch import load_file
