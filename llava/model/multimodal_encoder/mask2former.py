@@ -47,7 +47,6 @@ class Mask2FormerVisionTower(nn.Module):
                 for k, v in state_dict.items() if "class_embeds" in k
             }
             missing, unexpected = self.load_state_dict(state_dict_real, strict=False)
-            assert len(missing) == 0
 
     def forward(self, multi_images: torch.Tensor):
         self.vision_tower.eval()

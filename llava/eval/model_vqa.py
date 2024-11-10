@@ -34,7 +34,7 @@ def eval_model(args):
     model_name = get_model_name_from_path(model_path)
     tokenizer, model, image_processor, context_len, prompt_image_processor, object_processor = load_pretrained_model(model_path, args.model_base, model_name)
     clip_tokenizer = transformers.AutoTokenizer.from_pretrained(CLIP_PATH)
-    if "lingoqa" in args.question_file.lower():
+    if "lingoqa" in args.question_file.lower() or "bdd" in args.question_file.lower():
         with open(args.question_file, 'r', encoding='utf-8') as file:  
             data = json.load(file)
         questions = []
@@ -49,7 +49,8 @@ def eval_model(args):
     answers_file = os.path.expanduser(args.answers_file)
     os.makedirs(os.path.dirname(answers_file), exist_ok=True)
     ans_file = open(answers_file, "w")
-    questions = questions[::2]
+    if "lingoqa" in args.question_file.lower():
+        questions = questions[::2]
     for line in tqdm(questions):
         idx = line["question_id"]
         image_path_list = line["image_path_list"]
