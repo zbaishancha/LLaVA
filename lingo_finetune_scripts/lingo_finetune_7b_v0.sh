@@ -13,7 +13,7 @@ torchrun --nproc_per_node=8 \
     --deepspeed ./scripts/zero2.json \
     --model_name_or_path /mnt/csi-data-aly/shared/public/haozhou/checkpoints/LLaVA/llava-v1.5-7b \
     --version v1 \
-    --data_path ./playground/data/LingoQA/train_multi_v2.json \
+    --data_path ./playground/data/LingoQA/train_multi.json \
     --vision_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/clip-vit-large-patch14-336 \
     --prompt_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/dinov2-large \
     --object_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/mask2former-swin-large-cityscapes-semantic \
@@ -24,8 +24,8 @@ torchrun --nproc_per_node=8 \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/llava-v1.5-7b-hop-mask2former-from-scripts-v2 \
-    --exp_name finetune_llava_v1.5_7b_lingoqa_hop_mask2former_from_scripts_v2 \
+    --output_dir ./checkpoints/llava-v1.5-7b-hop-mask2former-from-scripts-v1 \
+    --exp_name finetune_llava_v1.5_7b_lingoqa_hop_mask2former_from_scripts_v1 \
     --num_train_epochs 1 \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 1 \

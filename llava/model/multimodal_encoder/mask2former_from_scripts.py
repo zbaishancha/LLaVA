@@ -10,7 +10,7 @@ from .modules import MaskFormerHead
 from .backbone.swin import SwinTransformer
 
 
-CKPT = "/mnt/csi-data-aly/user/haozhou/Projects/Mask2Former/output_swin_baseline/model_final.pth"
+CKPT = "/mnt/csi-data-aly/user/haozhou/Projects/Mask2Former/output/model_final.pth"
 
 class MaskFormerScripts(nn.Module):
     """
