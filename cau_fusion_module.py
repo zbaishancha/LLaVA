@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from llava.model.multimodal_encoder.dino_encoder import SelfAttention, CrossModalAttention
-
 from torchinfo import summary
 from ptflops import get_model_complexity_info
 
@@ -11,6 +10,9 @@ class FusionModel(nn.Module):
         self.feature_fusion_strategy = feature_fusion_strategy
         self.vision_tower_name = vision_tower_name
 
+        self.text_projection = nn.Linear(4096, 1024)
+        self.query_projection = nn.Linear(256, 1024)
+        
         if self.feature_fusion_strategy == 'series-connection-cross':
             self.prompt_module = nn.ModuleList([CrossModalAttention(self.vision_tower_name) for _ in range(3)])
         elif self.feature_fusion_strategy == 'parallel-connection-cross':
@@ -22,9 +24,11 @@ class FusionModel(nn.Module):
         elif self.feature_fusion_strategy == 'self-cross':
             self.global_attn = SelfAttention(self.vision_tower_name)
             self.prompt_module = CrossModalAttention(self.vision_tower_name)
-            
     
     def forward(self, image_features, prompt_image_features, text_embedding, queries_embedding):
+        text_embedding = self.text_projection(text_embedding) # B, N, D
+        queries_embedding = self.query_projection(queries_embedding) # B, N, D
+        
         if self.feature_fusion_strategy == 'one-cross':
             prompt_features = torch.cat([image_features, prompt_image_features, text_embedding, queries_embedding], dim=1)
             image_features = image_features + self.prompt_module(image_features, prompt_features)
@@ -50,29 +54,49 @@ class FusionModel(nn.Module):
         
         return image_features
 
-# Assuming CrossModalAttention is defined, initialize the model and input
-model = FusionModel(feature_fusion_strategy='series-connection-cross', vision_tower_name='example_tower')
-image_features = torch.randn(1, 64, 256)  # Example input shape (Batch, Tokens, Features)
-prompt_image_features = torch.randn(1, 64, 256)
-text_embedding = torch.randn(1, 64, 256)
-queries_embedding = torch.randn(1, 64, 256)
+# Wrapper class for multi-input compatibility with ptflops
+class FusionModelWrapper(nn.Module):
+    def __init__(self, model, image_features, prompt_image_features, text_embedding, queries_embedding):
+        super(FusionModelWrapper, self).__init__()
+        self.model = model
+        self.image_features = image_features
+        self.prompt_image_features = prompt_image_features
+        self.text_embedding = text_embedding
+        self.queries_embedding = queries_embedding
+
+    def forward(self, x):
+        return self.model(self.image_features, self.prompt_image_features, self.text_embedding, self.queries_embedding)
+
+# Initialize the model and inputs
+model = FusionModel(feature_fusion_strategy='one-cross', vision_tower_name='example_tower').cuda()
+image_features = torch.randn(1, 576, 1024).cuda()  # Example input shape (Batch, Tokens, Features)
+prompt_image_features = torch.randn(1, 576, 1024).cuda()
+text_embedding = torch.randn(1, 20, 4096).cuda()
+queries_embedding = torch.randn(1, 16, 256).cuda()
+
+# Wrap the model for FLOPs calculation
+wrapped_model = FusionModelWrapper(model, image_features, prompt_image_features, text_embedding, queries_embedding)
 
 # Parameter count and FLOPs calculation
-def get_params_and_flops(model, image_features, prompt_image_features, text_embedding, queries_embedding):
+def get_params_and_flops(model):
     # Print parameter summary
     print("Model Parameter Summary:")
-    summary(model, input_data=(image_features, prompt_image_features, text_embedding, queries_embedding))
+    summary(model, input_size=(1,))
 
     # Calculate FLOPs
     print("FLOPs Calculation:")
-    with torch.no_grad():
-        macs, params = get_model_complexity_info(
-            model, 
-            (image_features.shape, prompt_image_features.shape, text_embedding.shape, queries_embedding.shape), 
-            as_strings=True,
-            print_per_layer_stat=True
-        )
-    print(f"FLOPs: {macs}, Params: {params}")
+    macs, params = get_model_complexity_info(
+        model, 
+        (1,),  # Dummy input to comply with ptflops
+        as_strings=True,
+        print_per_layer_stat=True,
+        verbose=True
+    )
+    
+    # Convert to GFLOPs and million parameters
+    flops_in_gflops = float(macs.replace(" GMac", ""))  # Assuming output in GMac
+    params_in_million = float(params.replace(" M", ""))  # Assuming output in M
+    print(f"{model.model.feature_fusion_strategy}_GFLOPs: {flops_in_gflops} GFLOPs, Params: {params_in_million} M")
 
 # Run calculations
-get_params_and_flops(model, image_features, prompt_image_features, text_embedding, queries_embedding)
+get_params_and_flops(wrapped_model)
