@@ -13,7 +13,7 @@ torchrun --nproc_per_node=8 \
     --deepspeed ./scripts/zero2.json \
     --model_name_or_path /mnt/csi-data-aly/shared/public/haozhou/checkpoints/LLaVA/llava-v1.5-7b \
     --version v1 \
-    --data_path ./playground/data/LingoQA/train.json \
+    --data_path ./playground/data/DRAMA/train_filtered_hop.json \
     --vision_tower /mnt/csi-data-aly/shared/public/haozhou/checkpoints/clip-vit-large-patch14-336 \
     --mm_projector_type mlp2x_gelu \
     --mm_vision_select_layer -2 \
@@ -22,8 +22,8 @@ torchrun --nproc_per_node=8 \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/llava-v1.5-7b-efficient-head-v3 \
-    --exp_name finetune_llava_v1.5_7b_lingoqa_efficient_head_v3 \
+    --output_dir ./checkpoints/llava-v1.5-7b-efficient-head-drama \
+    --exp_name finetune_llava_v1.5_7b_lingoqa_efficient_head_drama \
     --num_train_epochs 1 \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 1 \
