@@ -43,7 +43,7 @@ class CrossModalAttention(nn.Module):
         if self.flash:
             k = k.view(B, k.size(1), self.num_heads, C // self.num_heads).transpose(1, 2) # (B, nh, T, hs)
         else:
-            k = k.view(B, T, self.num_heads, C // self.num_heads).permute((0, 2, 3, 1)) # (B, nh, hs, T)
+            k = k.view(B, k.size(1), self.num_heads, C // self.num_heads).permute((0, 2, 3, 1)) # (B, nh, hs, T)
         q = q.view(B, T, self.num_heads, C // self.num_heads).transpose(1, 2) # (B, nh, T, hs)
         v = v.view(B, v.size(1), self.num_heads, C // self.num_heads).transpose(1, 2) # (B, nh, T, hs)
 
