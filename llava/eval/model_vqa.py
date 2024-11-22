@@ -32,7 +32,7 @@ def eval_model(args):
     clip_tokenizer = transformers.AutoTokenizer.from_pretrained(CLIP_PATH)
     
     # Load questions
-    if "lingoqa" in args.question_file.lower() or "bdd" in args.question_file.lower():
+    if "lingoqa" in args.question_file.lower() or "bdd" in args.question_file.lower() or "deeproute" in args.question_file.lower():
         with open(args.question_file, 'r', encoding='utf-8') as file:  
             data = json.load(file)
         questions = [
@@ -122,7 +122,8 @@ def eval_model(args):
             "text": outputs,
             "answer_id": ans_id,
             "model_id": model_name,
-            "metadata": {}
+            "metadata": {},
+            "image_path_list": image_path_list
         }
         
         ans_file.write(json.dumps(answer_entry) + "\n")
