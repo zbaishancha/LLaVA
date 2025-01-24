@@ -10,7 +10,7 @@ from llava.conversation import conv_templates, SeparatorStyle
 from llava.model.builder import load_pretrained_model
 from llava.utils import disable_torch_init
 from llava.mm_utils import tokenizer_image_token, process_images, get_model_name_from_path
-
+import time
 from PIL import Image
 import math
 
@@ -48,6 +48,12 @@ def eval_model(args):
     os.makedirs(os.path.dirname(answers_file), exist_ok=True)
     ans_file = open(answers_file, "w")
     questions = questions[::2]
+    
+    # Performance metrics initialization
+    total_frames = 0
+    torch.cuda.reset_peak_memory_stats(device="cuda:0")
+    start_time = time.time()
+    
     for line in tqdm(questions):
         idx = line["question_id"]
         image_path_list = line["image_path_list"]
@@ -84,7 +90,7 @@ def eval_model(args):
                 use_cache=True)
 
         outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
-
+        total_frames += 1
         ans_id = shortuuid.uuid()
         ans_file.write(json.dumps({"question_id": idx,
                                    "prompt": cur_prompt,
@@ -93,7 +99,17 @@ def eval_model(args):
                                    "model_id": model_name,
                                    "metadata": {}}) + "\n")
         ans_file.flush()
+    
+    end_time = time.time()
+    total_duration = end_time - start_time
+    fps = total_frames / total_duration
+    peak_memory_used = torch.cuda.max_memory_allocated(device="cuda:0") / (1024 ** 3)  # GB
+
     ans_file.close()
+    print(f"Total frames processed: {total_frames}")
+    print(f"Total time: {total_duration:.2f} seconds")
+    print(f"FPS (Frames Per Second): {fps:.2f}")
+    print(f"Peak GPU memory used: {peak_memory_used:.2f} GB")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
